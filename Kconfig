@@ -1,0 +1,68 @@
+menu "KeeMASH Reliable Mesh"
+
+    config KEEMASH_REL_INITIAL_RTO_MS
+        int "Initial retransmission timeout (ms)"
+        range 500 5000
+        default 1500
+
+    config KEEMASH_REL_MIN_RTO_MS
+        int "Minimum retransmission timeout (ms)"
+        range 250 5000
+        default 500
+
+    config KEEMASH_REL_MAX_RTO_MS
+        int "Maximum retransmission timeout (ms)"
+        range 1000 10000
+        default 5000
+
+    config KEEMASH_REL_MAX_RETRIES
+        int "Maximum retransmissions"
+        range 1 10
+        default 5
+
+    config KEEMASH_REL_FRAGMENT_TIMEOUT_MS
+        int "Fragment reassembly timeout (ms)"
+        range 1000 60000
+        default 10000
+
+    config KEEMASH_REL_FAULT_DROP_DATA_EVERY
+        int "Debug: drop every Nth reliable DATA packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_DROP_ACK_EVERY
+        int "Debug: drop every Nth reliable ACK packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_DROP_NACK_EVERY
+        int "Debug: drop every Nth reliable NACK packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_DUPLICATE_EVERY
+        int "Debug: duplicate every Nth reliable DATA packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_DELAY_EVERY
+        int "Debug: delay every Nth reliable DATA packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_DELAY_MS
+        int "Debug: injected DATA delay (ms)"
+        range 1 10000
+        default 250
+
+    config KEEMASH_REL_FAULT_REORDER_EVERY
+        int "Debug: reorder every Nth reliable DATA packet"
+        range 0 10000
+        default 0
+
+    config KEEMASH_REL_FAULT_OVERFLOW_EVERY
+        int "Debug: force overflow for every Nth message"
+        range 0 10000
+        default 0
+
+endmenu
