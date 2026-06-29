@@ -1336,6 +1336,20 @@ esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
 	return ESP_OK;
 }
 
+esp_err_t keemash_rel_debug_force_expected_seq(keemash_rel_ctx_t *ctx,
+						       const uint8_t peer_mac[6],
+						       uint8_t channel,
+						       uint32_t expected_seq)
+{
+	if (!ctx || channel == 0 || channel >= KM_CHANNEL_COUNT) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	peer_state_t *peer = peer_find(ctx, peer_mac, false);
+	if (!peer || !peer->ready) return ESP_ERR_INVALID_STATE;
+	peer->expected_seq[channel] = expected_seq;
+	return ESP_OK;
+}
+
 esp_err_t keemash_rel_debug_reset_local_session(keemash_rel_ctx_t *ctx)
 {
 	if (!ctx) return ESP_ERR_INVALID_ARG;
@@ -1585,6 +1599,8 @@ static bool debug_case_seq_wrap(keemash_rel_debug_result_t *out)
 	static const uint8_t root_peer[6] = {0};
 	if (debug_handshake(&root_ep, &node_ep) &&
 	    keemash_rel_debug_force_next_seq(node_ep.ctx, root_peer,
+		MESH_V2_TUNNEL_CHANNEL_CONTROL, 0xFFFFFFFEUL) == ESP_OK &&
+	    keemash_rel_debug_force_expected_seq(root_ep.ctx, node_ep.mac,
 		MESH_V2_TUNNEL_CHANNEL_CONTROL, 0xFFFFFFFEUL) == ESP_OK &&
 	    debug_send_control(node_ep.ctx, root_peer, 1) &&
 	    debug_send_control(node_ep.ctx, root_peer, 2) &&

@@ -115,6 +115,10 @@ esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
 						   const uint8_t peer_mac[6],
 						   uint8_t channel,
 						   uint32_t next_seq);
+esp_err_t keemash_rel_debug_force_expected_seq(keemash_rel_ctx_t *ctx,
+						       const uint8_t peer_mac[6],
+						       uint8_t channel,
+						       uint32_t expected_seq);
 esp_err_t keemash_rel_debug_reset_local_session(keemash_rel_ctx_t *ctx);
 esp_err_t keemash_rel_debug_force_fragment_timeout(keemash_rel_ctx_t *ctx,
 						       const uint8_t peer_mac[6],
