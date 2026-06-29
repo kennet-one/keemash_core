@@ -1,4 +1,4 @@
-version: "0.1.0"
+version: "0.1.1"
 description: "KeeMASH reliable ESP-MESH protocol core"
 license: "GPL-2.0-only"
 dependencies:

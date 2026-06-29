@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "keemash_mesh_core.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -138,6 +139,11 @@ static bool mac_zero(const uint8_t mac[6])
 static void mac_copy(uint8_t dst[6], const uint8_t src[6])
 {
 	memcpy(dst, src, 6);
+}
+static uint32_t new_session_id(void)
+{
+	uint32_t id = esp_random();
+	return id ? id : 1U;
 }
 
 static void flush_delayed_packet(keemash_rel_ctx_t *ctx, uint32_t now)
@@ -840,10 +846,8 @@ esp_err_t keemash_rel_init(keemash_rel_ctx_t **out, const keemash_rel_config_t *
 	keemash_rel_ctx_t *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) return ESP_ERR_NO_MEM;
 	ctx->cfg = *config;
-	ctx->local_session = esp_random();
-	if (!ctx->local_session) ctx->local_session = 1;
-	ctx->next_stream_id = esp_random();
-	if (!ctx->next_stream_id) ctx->next_stream_id = 1;
+	ctx->local_session = new_session_id();
+	ctx->next_stream_id = new_session_id();
 	ctx->peers = calloc(config->max_peers, sizeof(*ctx->peers));
 	ctx->tx = calloc(config->tx_slots, sizeof(*ctx->tx));
 	ctx->rx = calloc(config->rx_slots, sizeof(*ctx->rx));
@@ -1316,4 +1320,371 @@ bool keemash_rel_stats(keemash_rel_ctx_t *ctx, const uint8_t peer_mac[6],
 	out->lost_count = peer->lost_count;
 	out->lost_reason = peer->lost_reason;
 	return true;
+}
+
+esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
+						   const uint8_t peer_mac[6],
+						   uint8_t channel,
+						   uint32_t next_seq)
+{
+	if (!ctx || channel == 0 || channel >= KM_CHANNEL_COUNT) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	peer_state_t *peer = peer_find(ctx, peer_mac, false);
+	if (!peer || !peer->ready) return ESP_ERR_INVALID_STATE;
+	peer->next_seq[channel] = next_seq ? next_seq : 1U;
+	return ESP_OK;
+}
+
+esp_err_t keemash_rel_debug_reset_local_session(keemash_rel_ctx_t *ctx)
+{
+	if (!ctx) return ESP_ERR_INVALID_ARG;
+	ctx->local_session = new_session_id();
+	ctx->held_valid = false;
+	ctx->delayed_valid = false;
+	for (uint16_t i = 0; i < ctx->cfg.max_peers; i++) {
+		peer_state_t *peer = &ctx->peers[i];
+		if (!peer->used) continue;
+		clear_peer_buffers(ctx, peer, MESH_V2_LOST_REASON_SESSION_RESET);
+		if (ctx->cfg.root_role) {
+			peer->root_session_id = ctx->local_session;
+			peer->node_session_id = 0;
+		} else {
+			peer->root_session_id = 0;
+			peer->node_session_id = ctx->local_session;
+		}
+	}
+	return ESP_OK;
+}
+
+esp_err_t keemash_rel_debug_force_fragment_timeout(keemash_rel_ctx_t *ctx,
+						       const uint8_t peer_mac[6],
+						       uint8_t channel)
+{
+	if (!ctx || channel == 0 || channel >= KM_CHANNEL_COUNT) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	peer_state_t *peer = peer_find(ctx, peer_mac, false);
+	if (!peer || !peer->ready) return ESP_ERR_INVALID_STATE;
+	for (uint16_t i = 0; i < ctx->cfg.reassembly_slots; i++) {
+		reassembly_slot_t *slot = &ctx->reassembly[i];
+		if (slot->used) continue;
+		memset(slot, 0, sizeof(*slot));
+		slot->used = true;
+		mac_copy(slot->peer, peer->mac);
+		slot->channel = channel;
+		slot->stream_id = ctx->next_stream_id++;
+		if (!slot->stream_id) slot->stream_id = ctx->next_stream_id++;
+		slot->first_seq = peer->expected_seq[channel];
+		slot->fragment_count = 2;
+		slot->fragment_len[0] = 1;
+		slot->received_mask = 0x0001;
+		slot->data[0] = 0xA5;
+		slot->last_ms = now_ms() - ctx->cfg.fragment_timeout_ms - 1U;
+		return ESP_OK;
+	}
+	return ESP_ERR_NO_MEM;
+}
+
+esp_err_t keemash_rel_debug_force_retry_exhausted(keemash_rel_ctx_t *ctx,
+						      const uint8_t peer_mac[6],
+						      uint8_t channel)
+{
+	if (!ctx || channel == 0 || channel >= KM_CHANNEL_COUNT) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	peer_state_t *peer = peer_find(ctx, peer_mac, false);
+	if (!peer || !peer->ready) return ESP_ERR_INVALID_STATE;
+	tx_slot_t *slot = tx_alloc(ctx, KEEMASH_REL_PRIORITY_CONTROL);
+	if (!slot) return ESP_ERR_NO_MEM;
+	memset(slot, 0, sizeof(*slot));
+	slot->used = true;
+	slot->channel = channel;
+	slot->priority = KEEMASH_REL_PRIORITY_CONTROL;
+	slot->seq = peer->next_seq[channel]++;
+	slot->stream_id = ctx->next_stream_id++;
+	if (!slot->stream_id) slot->stream_id = ctx->next_stream_id++;
+	mac_copy(slot->peer, peer->mac);
+	mesh_v2_hdr_t *h = (mesh_v2_hdr_t *)slot->bytes;
+	mesh_v2_reliable_hdr_t *rh =
+		(mesh_v2_reliable_hdr_t *)(slot->bytes + sizeof(*h));
+	h->magic = MESH_PKT_MAGIC;
+	h->version = MESH_PKT_VERSION_V2;
+	h->type = MESH_V2_TYPE_RELIABLE_DATA;
+	h->session_id = ctx->local_session;
+	h->payload_len = (uint16_t)(sizeof(*rh) + 1U);
+	mac_copy(h->src_mac, ctx->cfg.local_mac);
+	rh->channel_id = channel;
+	rh->flags = MESH_V2_RELIABLE_FLAG_URGENT;
+	rh->priority = KEEMASH_REL_PRIORITY_CONTROL;
+	rh->fragment_count = 1;
+	rh->payload_len = 1;
+	rh->fragment_index = 0;
+	rh->stream_id = slot->stream_id;
+	rh->seq = slot->seq;
+	rh->tx_ms = now_ms();
+	rh->root_session_id = peer->root_session_id;
+	rh->node_session_id = peer->node_session_id;
+	mac_copy(rh->origin_mac, ctx->cfg.local_mac);
+	mac_copy(rh->target_mac, peer_send_mac(ctx, peer));
+	*((uint8_t *)rh + sizeof(*rh)) = 0x5A;
+	h->crc16 = packet_crc(h, slot->bytes + sizeof(*h));
+	slot->len = sizeof(*h) + h->payload_len;
+	slot->first_sent_ms = rh->tx_ms;
+	slot->last_sent_ms = rh->tx_ms - peer->rto_ms - 1U;
+	slot->retries = ctx->cfg.max_retries;
+	return ESP_OK;
+}
+
+typedef struct debug_endpoint debug_endpoint_t;
+struct debug_endpoint {
+	keemash_rel_ctx_t *ctx;
+	debug_endpoint_t *peer;
+	uint8_t mac[6];
+	uint32_t delivered[KM_CHANNEL_COUNT];
+	uint32_t lost_events;
+};
+
+static esp_err_t debug_send_cb(void *user, const uint8_t dst[6],
+				       const void *packet, size_t packet_len)
+{
+	(void)dst;
+	debug_endpoint_t *ep = (debug_endpoint_t *)user;
+	if (!ep || !ep->peer || !ep->peer->ctx) return ESP_ERR_INVALID_STATE;
+	return keemash_rel_handle_rx(ep->peer->ctx, ep->mac, packet, packet_len);
+}
+
+static void debug_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
+				     const void *payload, size_t payload_len,
+				     uint32_t stream_id)
+{
+	(void)peer;
+	(void)payload;
+	(void)payload_len;
+	(void)stream_id;
+	debug_endpoint_t *ep = (debug_endpoint_t *)user;
+	if (ep && channel < KM_CHANNEL_COUNT) ep->delivered[channel]++;
+}
+
+static void debug_event_cb(void *user, const uint8_t peer[6], uint8_t channel,
+			   uint8_t reason, uint32_t seq_first, uint32_t seq_last)
+{
+	(void)peer;
+	(void)channel;
+	(void)reason;
+	(void)seq_first;
+	(void)seq_last;
+	debug_endpoint_t *ep = (debug_endpoint_t *)user;
+	if (ep) ep->lost_events++;
+}
+
+static void debug_fill_config(keemash_rel_config_t *cfg, bool root_role,
+				      const uint8_t mac[6], debug_endpoint_t *ep)
+{
+	memset(cfg, 0, sizeof(*cfg));
+	cfg->root_role = root_role;
+	mac_copy(cfg->local_mac, mac);
+	cfg->max_peers = root_role ? 2 : 1;
+	cfg->tx_slots = 32;
+	cfg->rx_slots = 32;
+	cfg->reassembly_slots = 4;
+	cfg->reserved_control_slots = 4;
+	cfg->initial_rto_ms = 500;
+	cfg->min_rto_ms = 250;
+	cfg->max_rto_ms = 2000;
+	cfg->fragment_timeout_ms = 1000;
+	cfg->max_retries = 2;
+	cfg->send = debug_send_cb;
+	cfg->deliver = debug_deliver_cb;
+	cfg->event = debug_event_cb;
+	cfg->user = ep;
+}
+
+static esp_err_t debug_make_pair(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep)
+{
+	static const uint8_t root_mac[6] = {0x02,0x00,0x00,0x00,0x00,0x01};
+	static const uint8_t node_mac[6] = {0x02,0x00,0x00,0x00,0x00,0x02};
+	keemash_rel_config_t root_cfg;
+	keemash_rel_config_t node_cfg;
+	memset(root_ep, 0, sizeof(*root_ep));
+	memset(node_ep, 0, sizeof(*node_ep));
+	mac_copy(root_ep->mac, root_mac);
+	mac_copy(node_ep->mac, node_mac);
+	root_ep->peer = node_ep;
+	node_ep->peer = root_ep;
+	debug_fill_config(&root_cfg, true, root_mac, root_ep);
+	debug_fill_config(&node_cfg, false, node_mac, node_ep);
+	esp_err_t err = keemash_rel_init(&root_ep->ctx, &root_cfg);
+	if (err != ESP_OK) return err;
+	err = keemash_rel_init(&node_ep->ctx, &node_cfg);
+	if (err != ESP_OK) {
+		keemash_rel_deinit(root_ep->ctx);
+		root_ep->ctx = NULL;
+		return err;
+	}
+	return ESP_OK;
+}
+
+static void debug_free_pair(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep)
+{
+	keemash_rel_deinit(root_ep->ctx);
+	keemash_rel_deinit(node_ep->ctx);
+	root_ep->ctx = NULL;
+	node_ep->ctx = NULL;
+}
+
+static bool debug_handshake(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep)
+{
+	static const uint8_t root_peer[6] = {0};
+	if (keemash_rel_send_hello(node_ep->ctx, root_peer, "dbg", 1,
+				       MESH_V2_CAP_TYPED_CONTROL) != ESP_OK) {
+		return false;
+	}
+	return keemash_rel_peer_ready(root_ep->ctx, node_ep->mac) &&
+	       keemash_rel_peer_ready(node_ep->ctx, root_ep->mac);
+}
+
+static bool debug_send_control(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
+				       uint32_t command_id)
+{
+	mesh_v2_control_payload_t p = {0};
+	p.kind = MESH_V2_CONTROL_COMMAND;
+	p.command_id = command_id;
+	const char *text = "@dbg";
+	p.text_len = (uint8_t)strlen(text);
+	memcpy(p.text, text, p.text_len);
+	return keemash_rel_send(ctx, peer, MESH_V2_TUNNEL_CHANNEL_CONTROL,
+				       &p, offsetof(mesh_v2_control_payload_t, text) + p.text_len,
+				       KEEMASH_REL_PRIORITY_CONTROL) == ESP_OK;
+}
+
+static void debug_accum_stats(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep,
+				      keemash_rel_debug_result_t *out)
+{
+	keemash_rel_stats_t st;
+	if (keemash_rel_stats(root_ep->ctx, node_ep->mac, &st)) {
+		out->lost_count += st.lost_count;
+		out->overflow_count += st.overflow_count;
+		out->replay_count += st.replay_count;
+		out->retry_count += st.retry_count;
+	}
+	if (keemash_rel_stats(node_ep->ctx, root_ep->mac, &st)) {
+		out->lost_count += st.lost_count;
+		out->overflow_count += st.overflow_count;
+		out->replay_count += st.replay_count;
+		out->retry_count += st.retry_count;
+	}
+}
+
+static bool debug_case_seq_wrap(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	static const uint8_t root_peer[6] = {0};
+	if (debug_handshake(&root_ep, &node_ep) &&
+	    keemash_rel_debug_force_next_seq(node_ep.ctx, root_peer,
+		MESH_V2_TUNNEL_CHANNEL_CONTROL, 0xFFFFFFFEUL) == ESP_OK &&
+	    debug_send_control(node_ep.ctx, root_peer, 1) &&
+	    debug_send_control(node_ep.ctx, root_peer, 2) &&
+	    debug_send_control(node_ep.ctx, root_peer, 3)) {
+		keemash_rel_stats_t st = {0};
+		pass = root_ep.delivered[MESH_V2_TUNNEL_CHANNEL_CONTROL] == 3 &&
+		       keemash_rel_stats(root_ep.ctx, node_ep.mac, &st) &&
+		       st.lost_count == 0 && st.reorder_depth == 0;
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
+static bool debug_case_session_reset(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	if (debug_handshake(&root_ep, &node_ep)) {
+		uint32_t old_session = keemash_rel_local_session(root_ep.ctx);
+		(void)keemash_rel_debug_reset_local_session(root_ep.ctx);
+		pass = keemash_rel_local_session(root_ep.ctx) != old_session &&
+		       debug_handshake(&root_ep, &node_ep);
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
+static bool debug_case_fragment_timeout(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	if (debug_handshake(&root_ep, &node_ep) &&
+	    keemash_rel_debug_force_fragment_timeout(root_ep.ctx, node_ep.mac,
+		MESH_V2_TUNNEL_CHANNEL_TASK) == ESP_OK) {
+		keemash_rel_poll(root_ep.ctx);
+		keemash_rel_stats_t st = {0};
+		pass = keemash_rel_stats(root_ep.ctx, node_ep.mac, &st) &&
+		       st.lost_reason == MESH_V2_LOST_REASON_FRAGMENT_TIMEOUT &&
+		       st.lost_count > 0;
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
+static bool debug_case_retry_exhausted(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	static const uint8_t root_peer[6] = {0};
+	if (debug_handshake(&root_ep, &node_ep) &&
+	    keemash_rel_debug_force_retry_exhausted(node_ep.ctx, root_peer,
+		MESH_V2_TUNNEL_CHANNEL_CONTROL) == ESP_OK) {
+		keemash_rel_poll(node_ep.ctx);
+		keemash_rel_stats_t st = {0};
+		pass = keemash_rel_stats(node_ep.ctx, root_ep.mac, &st) &&
+		       !st.ready && st.lost_reason == MESH_V2_LOST_REASON_RETRY_EXHAUSTED &&
+		       st.lost_count > 0;
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
+esp_err_t keemash_rel_debug_run_selftest(uint32_t case_mask,
+						 keemash_rel_debug_result_t *out)
+{
+	if (!out) return ESP_ERR_INVALID_ARG;
+	memset(out, 0, sizeof(*out));
+	if (case_mask == 0) case_mask = KEEMASH_REL_DEBUG_CASE_ALL;
+
+	struct {
+		uint32_t bit;
+		bool (*fn)(keemash_rel_debug_result_t *out);
+	} cases[] = {
+		{KEEMASH_REL_DEBUG_CASE_SEQ_WRAP, debug_case_seq_wrap},
+		{KEEMASH_REL_DEBUG_CASE_SESSION_RESET, debug_case_session_reset},
+		{KEEMASH_REL_DEBUG_CASE_FRAGMENT_TIMEOUT, debug_case_fragment_timeout},
+		{KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED, debug_case_retry_exhausted},
+	};
+
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		if (!(case_mask & cases[i].bit)) continue;
+		out->cases_run++;
+		if (cases[i].fn(out)) {
+			out->cases_passed++;
+		} else {
+			out->failed_mask |= cases[i].bit;
+		}
+	}
+	out->pass = out->cases_run > 0 && out->failed_mask == 0;
+	snprintf(out->message, sizeof(out->message), "%lu/%lu lossless selftests passed",
+		 (unsigned long)out->cases_passed, (unsigned long)out->cases_run);
+	return ESP_OK;
 }

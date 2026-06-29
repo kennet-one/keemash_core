@@ -55,6 +55,27 @@ typedef struct {
 	void *user;
 } keemash_rel_config_t;
 
+#define KEEMASH_REL_DEBUG_CASE_SEQ_WRAP		0x00000001UL
+#define KEEMASH_REL_DEBUG_CASE_SESSION_RESET	0x00000002UL
+#define KEEMASH_REL_DEBUG_CASE_FRAGMENT_TIMEOUT	0x00000004UL
+#define KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED	0x00000008UL
+#define KEEMASH_REL_DEBUG_CASE_ALL		( \
+	KEEMASH_REL_DEBUG_CASE_SEQ_WRAP | \
+	KEEMASH_REL_DEBUG_CASE_SESSION_RESET | \
+	KEEMASH_REL_DEBUG_CASE_FRAGMENT_TIMEOUT | \
+	KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED)
+
+typedef struct {
+	bool pass;
+	uint32_t cases_run;
+	uint32_t cases_passed;
+	uint32_t failed_mask;
+	uint32_t lost_count;
+	uint32_t overflow_count;
+	uint32_t replay_count;
+	uint32_t retry_count;
+	char message[128];
+} keemash_rel_debug_result_t;
 typedef struct {
 	bool seen;
 	bool ready;
@@ -90,6 +111,19 @@ void keemash_rel_reset_peer(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 bool keemash_rel_peer_ready(keemash_rel_ctx_t *ctx, const uint8_t peer[6]);
 bool keemash_rel_stats(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 		       keemash_rel_stats_t *out);
+esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
+						   const uint8_t peer_mac[6],
+						   uint8_t channel,
+						   uint32_t next_seq);
+esp_err_t keemash_rel_debug_reset_local_session(keemash_rel_ctx_t *ctx);
+esp_err_t keemash_rel_debug_force_fragment_timeout(keemash_rel_ctx_t *ctx,
+						       const uint8_t peer_mac[6],
+						       uint8_t channel);
+esp_err_t keemash_rel_debug_force_retry_exhausted(keemash_rel_ctx_t *ctx,
+						      const uint8_t peer_mac[6],
+						      uint8_t channel);
+esp_err_t keemash_rel_debug_run_selftest(uint32_t case_mask,
+						 keemash_rel_debug_result_t *out);
 
 #ifdef __cplusplus
 }

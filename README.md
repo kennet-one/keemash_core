@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.1.0`.
+Current version: `0.1.1`.
 
 License: `GPL-2.0-only`.
 
@@ -26,19 +26,19 @@ sync are not part of this reliable replay layer.
 
 ## Integration
 
-Firmware projects add this component to `EXTRA_COMPONENT_DIRS`, require
+Firmware projects add this component to ESP-IDF Component Manager or `EXTRA_COMPONENT_DIRS`, require
 `keemash_mesh_core`, and keep only their transport adapter, telemetry provider,
 command adapter and hardware modules.
 
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00010000UL
-#error "firmware requires keemash_mesh_core 0.1.0"
+#if KEEMASH_MESH_CORE_VERSION != 0x00010001UL
+#error "firmware requires keemash_mesh_core 0.1.1"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.1.0` when integrating the component into
+Use a fixed commit or tag such as `v0.1.1` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults
