@@ -1021,7 +1021,7 @@ static esp_err_t handle_hello(keemash_rel_ctx_t *ctx, const uint8_t from[6],
 		.mtu = MESH_V2_PACKET_MAX,
 		.capabilities = MESH_V2_CAP_RELIABLE_E2E | MESH_V2_CAP_SACK |
 				MESH_V2_CAP_FRAGMENT | MESH_V2_CAP_TYPED_CONTROL |
-				MESH_V2_CAP_TYPED_MEMORY,
+				MESH_V2_CAP_TYPED_MEMORY | MESH_V2_CAP_OTA,
 		.root_session_id = ctx->local_session,
 		.node_session_id = hello->node_session_id,
 		.reset_link = reset ? 1 : 0,

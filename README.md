@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.1.3`.
+Current version: `0.2.0`.
 
 License: `GPL-2.0-only`.
 
@@ -19,10 +19,12 @@ License: `GPL-2.0-only`.
 - explicit LOST ranges;
 - fragmentation/reassembly up to 16 fragments;
 - channel priorities and reserved CONTROL slots;
-- deterministic fault injection.
+- deterministic fault injection;
+- typed reliable OTA payloads on the reserved OTA channel.
 
-ESP-MESH remains responsible for multi-hop routing. OTA, manual reboot and time
-sync are not part of this reliable replay layer.
+ESP-MESH remains responsible for multi-hop routing. Manual reboot and time sync
+stay outside the reliable replay layer. OTA uses the reliable layer only when
+firmware explicitly advertises `MESH_V2_CAP_OTA`.
 
 ## Integration
 
@@ -33,12 +35,12 @@ command adapter and hardware modules.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00010003UL
-#error "firmware requires keemash_mesh_core 0.1.3"
+#if KEEMASH_MESH_CORE_VERSION != 0x00020000UL
+#error "firmware requires keemash_mesh_core 0.2.0"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.1.3` when integrating the component into
+Use a fixed commit or tag such as `v0.2.0` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define KEEMASH_MESH_CORE_VERSION	0x00010003UL
+#define KEEMASH_MESH_CORE_VERSION	0x00020000UL
 
 #define MESH_PKT_MAGIC			0xA5
 #define MESH_PKT_VERSION		1
@@ -102,6 +102,7 @@ extern "C" {
 #define MESH_V2_CAP_FRAGMENT		0x00000020UL
 #define MESH_V2_CAP_TYPED_CONTROL	0x00000040UL
 #define MESH_V2_CAP_TYPED_MEMORY		0x00000080UL
+#define MESH_V2_CAP_OTA			0x00000100UL
 
 #define MESH_V2_RELIABLE_PROFILE_VERSION	1
 #define MESH_V2_RELIABLE_WINDOW		32
@@ -126,6 +127,19 @@ extern "C" {
 #define MESH_V2_CONTROL_STATUS_UNSUPPORTED	1
 #define MESH_V2_CONTROL_STATUS_FAILED	2
 #define MESH_V2_CONTROL_TEXT_MAX	128
+
+#define MESH_V2_OTA_OP_PREPARE		1
+#define MESH_V2_OTA_OP_DATA		2
+#define MESH_V2_OTA_OP_COMMIT		3
+#define MESH_V2_OTA_OP_ABORT		4
+#define MESH_V2_OTA_OP_STATUS		5
+
+#define MESH_V2_OTA_STATUS_OK		0
+#define MESH_V2_OTA_STATUS_ERROR	1
+#define MESH_V2_OTA_STATUS_BUSY		2
+
+#define MESH_V2_OTA_CHUNK_MAX		1024
+#define MESH_V2_OTA_SHA256_LEN		32
 
 #define MESH_V2_TUNNEL_CHANNEL_NODEINFO	1
 #define MESH_V2_TUNNEL_CHANNEL_LOG	2
@@ -537,6 +551,45 @@ typedef struct __attribute__((packed)) {
 } mesh_v2_control_payload_t;
 
 typedef struct __attribute__((packed)) {
+	uint8_t		op;
+	uint8_t		status;
+	uint16_t	rsv;
+	uint32_t	op_id;
+	uint32_t	image_size;
+	uint32_t	offset;
+	uint32_t	len;
+	char		project_name[MESH_OTA_PROJECT_MAX];
+	char		version[MESH_OTA_VERSION_MAX];
+	uint8_t		sha256[MESH_V2_OTA_SHA256_LEN];
+	char		message[MESH_OTA_STATUS_MSG_MAX];
+} mesh_v2_ota_common_payload_t;
+
+typedef struct __attribute__((packed)) {
+	mesh_v2_ota_common_payload_t c;
+} mesh_v2_ota_prepare_payload_t;
+
+typedef struct __attribute__((packed)) {
+	mesh_v2_ota_common_payload_t c;
+	uint8_t		data[MESH_V2_OTA_CHUNK_MAX];
+} mesh_v2_ota_data_payload_t;
+
+typedef struct __attribute__((packed)) {
+	mesh_v2_ota_common_payload_t c;
+} mesh_v2_ota_commit_payload_t;
+
+typedef struct __attribute__((packed)) {
+	mesh_v2_ota_common_payload_t c;
+} mesh_v2_ota_abort_payload_t;
+
+typedef struct __attribute__((packed)) {
+	mesh_v2_ota_common_payload_t c;
+	char		running_label[MESH_OTA_SLOT_LABEL_MAX];
+	char		update_label[MESH_OTA_SLOT_LABEL_MAX];
+	uint32_t	running_size;
+	uint32_t	update_size;
+} mesh_v2_ota_status_payload_t;
+
+typedef struct __attribute__((packed)) {
 	char		tag[MESH_V2_TAG_MAX];
 	uint32_t	uptime_s;
 	uint32_t	heap_free;
@@ -568,6 +621,12 @@ _Static_assert(sizeof(mesh_v2_control_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "control payload unexpectedly requires fragmentation");
 _Static_assert(sizeof(mesh_v2_memory_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "memory payload unexpectedly requires fragmentation");
+_Static_assert(sizeof(mesh_v2_ota_status_payload_t) <=
+		       MESH_V2_RELIABLE_INNER_MAX * MESH_V2_RELIABLE_MAX_FRAGMENTS,
+	       "OTA status payload exceeds reliable message capacity");
+_Static_assert(sizeof(mesh_v2_ota_data_payload_t) <=
+		       MESH_V2_RELIABLE_INNER_MAX * MESH_V2_RELIABLE_MAX_FRAGMENTS,
+	       "OTA data payload exceeds reliable message capacity");
 _Static_assert(sizeof(mesh_v2_task_snapshot_payload_t) <=
 		       MESH_V2_RELIABLE_INNER_MAX * MESH_V2_RELIABLE_MAX_FRAGMENTS,
 	       "task snapshot exceeds reliable message capacity");
