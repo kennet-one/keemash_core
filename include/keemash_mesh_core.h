@@ -59,11 +59,15 @@ typedef struct {
 #define KEEMASH_REL_DEBUG_CASE_SESSION_RESET	0x00000002UL
 #define KEEMASH_REL_DEBUG_CASE_FRAGMENT_TIMEOUT	0x00000004UL
 #define KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED	0x00000008UL
+#define KEEMASH_REL_DEBUG_CASE_LOG_STRESS	0x00000010UL
+#define KEEMASH_REL_DEBUG_CASE_PARALLEL_CHANNELS 0x00000020UL
 #define KEEMASH_REL_DEBUG_CASE_ALL		( \
 	KEEMASH_REL_DEBUG_CASE_SEQ_WRAP | \
 	KEEMASH_REL_DEBUG_CASE_SESSION_RESET | \
 	KEEMASH_REL_DEBUG_CASE_FRAGMENT_TIMEOUT | \
-	KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED)
+	KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED | \
+	KEEMASH_REL_DEBUG_CASE_LOG_STRESS | \
+	KEEMASH_REL_DEBUG_CASE_PARALLEL_CHANNELS)
 
 typedef struct {
 	bool pass;
@@ -74,6 +78,13 @@ typedef struct {
 	uint32_t overflow_count;
 	uint32_t replay_count;
 	uint32_t retry_count;
+	uint32_t delivered_control;
+	uint32_t delivered_log;
+	uint32_t delivered_task;
+	uint32_t delivered_memory;
+	uint32_t stress_frames;
+	uint32_t max_tx_unacked;
+	uint32_t max_reorder_depth;
 	char message[128];
 } keemash_rel_debug_result_t;
 typedef struct {
