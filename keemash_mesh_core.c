@@ -1849,6 +1849,61 @@ static bool debug_case_retry_exhausted(keemash_rel_debug_result_t *out)
 	return pass;
 }
 
+static bool debug_case_final_data(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	static const uint8_t root_peer[6] = {0};
+	uint8_t payload[(MESH_V2_RELIABLE_INNER_MAX * 2U) + 17U];
+	for (size_t i = 0; i < sizeof(payload); i++) {
+		payload[i] = (uint8_t)(0x40U + (i & 0x3FU));
+	}
+	if (debug_handshake(&root_ep, &node_ep)) {
+		node_ep.ctx->cfg.fault_drop_data_every = 3;
+		bool sent = keemash_rel_send(node_ep.ctx, root_peer,
+			MESH_V2_TUNNEL_CHANNEL_LOG, payload, sizeof(payload),
+			KEEMASH_REL_PRIORITY_LOG) == ESP_OK;
+		node_ep.ctx->cfg.fault_drop_data_every = 0;
+		keemash_rel_stats_t root_st = {0};
+		pass = sent &&
+		       debug_final_clean(&root_ep, &node_ep, out) &&
+		       root_ep.delivered[MESH_V2_TUNNEL_CHANNEL_LOG] == 1 &&
+		       keemash_rel_stats(root_ep.ctx, node_ep.mac, &root_st) &&
+		       root_st.replay_count > 0;
+		if (pass) out->final_data_passes++;
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
+static bool debug_case_final_ack(keemash_rel_debug_result_t *out)
+{
+	debug_endpoint_t root_ep;
+	debug_endpoint_t node_ep;
+	bool pass = false;
+	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	static const uint8_t root_peer[6] = {0};
+	if (debug_handshake(&root_ep, &node_ep)) {
+		root_ep.ctx->cfg.fault_drop_ack_every = 1;
+		bool sent = debug_send_payload(node_ep.ctx, root_peer,
+			MESH_V2_TUNNEL_CHANNEL_LOG, KEEMASH_REL_PRIORITY_LOG, 0xFA11ACUL);
+		root_ep.ctx->cfg.fault_drop_ack_every = 0;
+		keemash_rel_stats_t root_st = {0};
+		pass = sent &&
+		       debug_final_clean(&root_ep, &node_ep, out) &&
+		       root_ep.delivered[MESH_V2_TUNNEL_CHANNEL_LOG] == 1 &&
+		       keemash_rel_stats(root_ep.ctx, node_ep.mac, &root_st) &&
+		       root_st.replay_count > 0;
+		if (pass) out->final_ack_passes++;
+	}
+	debug_accum_stats(&root_ep, &node_ep, out);
+	debug_free_pair(&root_ep, &node_ep);
+	return pass;
+}
+
 static bool debug_case_log_stress(keemash_rel_debug_result_t *out)
 {
 	enum { frames = 10000 };
@@ -1981,6 +2036,8 @@ esp_err_t keemash_rel_debug_run_selftest(uint32_t case_mask,
 		{KEEMASH_REL_DEBUG_CASE_RETRY_EXHAUSTED, debug_case_retry_exhausted},
 		{KEEMASH_REL_DEBUG_CASE_LOG_STRESS, debug_case_log_stress},
 		{KEEMASH_REL_DEBUG_CASE_PARALLEL_CHANNELS, debug_case_parallel_channels},
+		{KEEMASH_REL_DEBUG_CASE_FINAL_DATA, debug_case_final_data},
+		{KEEMASH_REL_DEBUG_CASE_FINAL_ACK, debug_case_final_ack},
 	};
 
 	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
