@@ -83,6 +83,9 @@ typedef struct {
 	uint32_t delivered_task;
 	uint32_t delivered_memory;
 	uint32_t stress_frames;
+	uint32_t session_reset_root_passes;
+	uint32_t session_reset_node_passes;
+	uint32_t control_starvation_max_lag;
 	uint32_t max_tx_unacked;
 	uint32_t max_reorder_depth;
 	char message[128];

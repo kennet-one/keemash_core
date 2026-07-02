@@ -1616,6 +1616,18 @@ static bool debug_pair_idle(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep
 	       root_st.reorder_depth == 0 && node_st.reorder_depth == 0;
 }
 
+static void debug_update_control_lag(keemash_rel_debug_result_t *out,
+				     uint32_t sent_control,
+				     uint32_t delivered_control)
+{
+	if (!out) return;
+	uint32_t lag = sent_control > delivered_control ?
+	               sent_control - delivered_control : 0;
+	if (lag > out->control_starvation_max_lag) {
+		out->control_starvation_max_lag = lag;
+	}
+}
+
 static bool debug_pump_pair(debug_endpoint_t *root_ep, debug_endpoint_t *node_ep,
 			    keemash_rel_debug_result_t *out, uint16_t loops,
 			    bool force_due)
@@ -1746,11 +1758,50 @@ static bool debug_case_session_reset(keemash_rel_debug_result_t *out)
 	debug_endpoint_t node_ep;
 	bool pass = false;
 	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
+	static const uint8_t root_peer[6] = {0};
 	if (debug_handshake(&root_ep, &node_ep)) {
-		uint32_t old_session = keemash_rel_local_session(root_ep.ctx);
+		uint32_t old_root_session = keemash_rel_local_session(root_ep.ctx);
+		node_ep.ctx->cfg.fault_drop_ack_every = 1;
+		bool root_had_unacked = debug_send_payload(root_ep.ctx, node_ep.mac,
+			MESH_V2_TUNNEL_CHANNEL_CONTROL, KEEMASH_REL_PRIORITY_CONTROL, 0xA100) &&
+			debug_pair_idle(&root_ep, &node_ep, out) == false;
+		node_ep.ctx->cfg.fault_drop_ack_every = 0;
 		(void)keemash_rel_debug_reset_local_session(root_ep.ctx);
-		pass = keemash_rel_local_session(root_ep.ctx) != old_session &&
-		       debug_handshake(&root_ep, &node_ep);
+		bool root_reset_pass = root_had_unacked &&
+			keemash_rel_local_session(root_ep.ctx) != old_root_session &&
+			debug_handshake(&root_ep, &node_ep) &&
+			debug_send_payload(root_ep.ctx, node_ep.mac,
+				MESH_V2_TUNNEL_CHANNEL_CONTROL,
+				KEEMASH_REL_PRIORITY_CONTROL, 0xA101) &&
+			debug_pump_pair(&root_ep, &node_ep, out, 16, true);
+		if (root_reset_pass) out->session_reset_root_passes++;
+
+		uint32_t old_node_session = keemash_rel_local_session(node_ep.ctx);
+		root_ep.ctx->cfg.fault_drop_ack_every = 1;
+		bool node_had_unacked = debug_send_payload(node_ep.ctx, root_peer,
+			MESH_V2_TUNNEL_CHANNEL_CONTROL, KEEMASH_REL_PRIORITY_CONTROL, 0xB100) &&
+			debug_pair_idle(&root_ep, &node_ep, out) == false;
+		root_ep.ctx->cfg.fault_drop_ack_every = 0;
+		(void)keemash_rel_debug_reset_local_session(node_ep.ctx);
+		bool node_reset_pass = node_had_unacked &&
+			keemash_rel_local_session(node_ep.ctx) != old_node_session &&
+			debug_handshake(&root_ep, &node_ep) &&
+			debug_send_payload(node_ep.ctx, root_peer,
+				MESH_V2_TUNNEL_CHANNEL_CONTROL,
+				KEEMASH_REL_PRIORITY_CONTROL, 0xB101) &&
+			debug_pump_pair(&root_ep, &node_ep, out, 16, true);
+		if (node_reset_pass) out->session_reset_node_passes++;
+
+		keemash_rel_stats_t root_st = {0};
+		keemash_rel_stats_t node_st = {0};
+		bool stats_ok = keemash_rel_stats(root_ep.ctx, node_ep.mac, &root_st) &&
+				keemash_rel_stats(node_ep.ctx, root_ep.mac, &node_st);
+		pass = root_reset_pass && node_reset_pass && stats_ok &&
+		       root_st.lost_reason == MESH_V2_LOST_REASON_SESSION_RESET &&
+		       node_st.lost_reason == MESH_V2_LOST_REASON_SESSION_RESET &&
+		       root_st.lost_count > 0 && node_st.lost_count > 0 &&
+		       root_st.tx_unacked == 0 && node_st.tx_unacked == 0 &&
+		       root_st.reorder_depth == 0 && node_st.reorder_depth == 0;
 	}
 	debug_accum_stats(&root_ep, &node_ep, out);
 	debug_free_pair(&root_ep, &node_ep);
@@ -1845,6 +1896,8 @@ static bool debug_case_parallel_channels(keemash_rel_debug_result_t *out)
 	uint32_t expect_root_control = 0;
 	uint32_t expect_node_memory = 0;
 	uint32_t expect_node_control = 0;
+	uint32_t sent_root_control = 0;
+	uint32_t sent_node_control = 0;
 	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
 	static const uint8_t root_peer[6] = {0};
 	if (debug_handshake(&root_ep, &node_ep)) {
@@ -1879,6 +1932,7 @@ static bool debug_case_parallel_channels(keemash_rel_debug_result_t *out)
 						MESH_V2_TUNNEL_CHANNEL_CONTROL,
 						KEEMASH_REL_PRIORITY_CONTROL, i)) break;
 				expect_node_control++;
+				sent_node_control++;
 				out->stress_frames++;
 			}
 			if ((i % 11U) == 0) {
@@ -1886,9 +1940,14 @@ static bool debug_case_parallel_channels(keemash_rel_debug_result_t *out)
 						MESH_V2_TUNNEL_CHANNEL_CONTROL,
 						KEEMASH_REL_PRIORITY_CONTROL, i)) break;
 				expect_root_control++;
+				sent_root_control++;
 				out->stress_frames++;
 			}
 			(void)debug_pump_pair(&root_ep, &node_ep, out, 6, true);
+			debug_update_control_lag(out, sent_root_control,
+				root_ep.delivered[MESH_V2_TUNNEL_CHANNEL_CONTROL]);
+			debug_update_control_lag(out, sent_node_control,
+				node_ep.delivered[MESH_V2_TUNNEL_CHANNEL_CONTROL]);
 		}
 		debug_clear_faults(&root_ep, &node_ep);
 		pass = expect_root_log == rounds &&
@@ -1897,6 +1956,7 @@ static bool debug_case_parallel_channels(keemash_rel_debug_result_t *out)
 		       root_ep.delivered[MESH_V2_TUNNEL_CHANNEL_CONTROL] == expect_root_control &&
 		       node_ep.delivered[MESH_V2_TUNNEL_CHANNEL_MEMORY] == expect_node_memory &&
 		       node_ep.delivered[MESH_V2_TUNNEL_CHANNEL_CONTROL] == expect_node_control &&
+		       out->control_starvation_max_lag <= 2 &&
 		       debug_final_clean(&root_ep, &node_ep, out);
 	}
 	debug_accum_stats(&root_ep, &node_ep, out);

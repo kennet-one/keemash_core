@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.2.0`.
+Current version: `0.2.1`.
 
 License: `GPL-2.0-only`.
 
@@ -35,12 +35,12 @@ command adapter and hardware modules.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00020000UL
-#error "firmware requires keemash_mesh_core 0.2.0"
+#if KEEMASH_MESH_CORE_VERSION != 0x00020100UL
+#error "firmware requires keemash_mesh_core 0.2.1"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.2.0` when integrating the component into
+Use a fixed commit or tag such as `v0.2.1` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults
