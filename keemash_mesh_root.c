@@ -587,6 +587,30 @@ static void handle_hello(const uint8_t from[6], const mesh_v2_hdr_t *h, const ui
 	         MAC2STR(h->src_mac), tag, (unsigned long)h->session_id,
 	         (unsigned long)capabilities);
 }
+static void note_reliable_hello_metadata(const uint8_t peer[6],
+                                         const mesh_v2_reliable_hello_payload_t *hello)
+{
+	if (!peer || !hello) {
+		return;
+	}
+
+	char tag[MESH_V2_TAG_MAX + 1] = "node";
+	copy_packet_text(tag, sizeof(tag), hello->tag, sizeof(hello->tag));
+	uint32_t now = ms_now();
+
+	portENTER_CRITICAL(&s_lock);
+	root_node_state_t *st = find_node_locked(peer, true);
+	if (st) {
+		st->capabilities = hello->capabilities;
+		st->tunnel_seen = true;
+		st->last_v2_ms = now;
+		st->last_tunnel_ms = now;
+		copy_packet_text(st->tag, sizeof(st->tag), tag, sizeof(tag));
+	}
+	portEXIT_CRITICAL(&s_lock);
+
+	keemash_mesh_root_on_node_seen_uptime(peer, tag, true, hello->uptime_s);
+}
 
 static void deliver_legacy_v2_payload(const mesh_v2_hdr_t *h, const uint8_t *payload)
 {
@@ -924,6 +948,13 @@ esp_err_t mesh_v2_root_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 			esp_err_t rel_err = keemash_rel_handle_rx(s_rel, from,
 			                                          pkt_buf, pkt_len);
 			xSemaphoreGiveRecursive(s_rel_lock);
+			if (rel_err == ESP_OK && probe->type == MESH_V2_TYPE_RELIABLE_HELLO &&
+			    probe->payload_len >= sizeof(mesh_v2_reliable_hello_payload_t) &&
+			    pkt_len >= sizeof(mesh_v2_hdr_t) + sizeof(mesh_v2_reliable_hello_payload_t)) {
+				const mesh_v2_reliable_hello_payload_t *hello =
+					(const mesh_v2_reliable_hello_payload_t *)((const uint8_t *)pkt_buf + sizeof(mesh_v2_hdr_t));
+				note_reliable_hello_metadata(from, hello);
+			}
 			keemash_mesh_root_on_state_changed();
 			return rel_err;
 		}

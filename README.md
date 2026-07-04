@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.3.0`.
+Current version: `0.3.1`.
 
 License: `GPL-2.0-only`.
 
@@ -38,12 +38,12 @@ strong hook implementations declared in `keemash_mesh_hooks.h`.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00030000UL
-#error "firmware requires keemash_mesh_core 0.3.0"
+#if KEEMASH_MESH_CORE_VERSION != 0x00030100UL
+#error "firmware requires keemash_mesh_core 0.3.1"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.3.0` when integrating the component into
+Use a fixed commit or tag such as `v0.3.1` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults
