@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.3.1`.
+Current version: `0.3.2`.
 
 License: `GPL-2.0-only`.
 
@@ -38,12 +38,12 @@ strong hook implementations declared in `keemash_mesh_hooks.h`.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00030100UL
-#error "firmware requires keemash_mesh_core 0.3.1"
+#if KEEMASH_MESH_CORE_VERSION != 0x00030200UL
+#error "firmware requires keemash_mesh_core 0.3.2"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.3.1` when integrating the component into
+Use a fixed commit or tag such as `v0.3.2` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults
@@ -55,3 +55,7 @@ node firmware repositories.
 - every fault-injection counter: `0`.
 
 Fault injection must be returned to zero before a production image is flashed.
+
+## Firmware Binding Notes
+
+Firmware must provide strong keemash_mesh_transport_send() and keemash_mesh_get_local_mac() implementations from its ESP-MESH transport adapter. These hooks are intentionally not weak defaults: a missing transport binding must fail at link time instead of producing a runtime ESP_ERR_INVALID_STATE handshake failure.
