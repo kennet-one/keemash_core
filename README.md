@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.2.1`.
+Current version: `0.3.0`.
 
 License: `GPL-2.0-only`.
 
@@ -20,7 +20,9 @@ License: `GPL-2.0-only`.
 - fragmentation/reassembly up to 16 fragments;
 - channel priorities and reserved CONTROL slots;
 - deterministic fault injection;
-- typed reliable OTA payloads on the reserved OTA channel.
+- typed reliable OTA payloads on the reserved OTA channel;
+- reusable root and node facades with ESP-MESH transport hooks;
+- generic task, memory, OTA slot and OTA v2 receiver helpers.
 
 ESP-MESH remains responsible for multi-hop routing. Manual reboot and time sync
 stay outside the reliable replay layer. OTA uses the reliable layer only when
@@ -29,18 +31,19 @@ firmware explicitly advertises `MESH_V2_CAP_OTA`.
 ## Integration
 
 Firmware projects add this component to ESP-IDF Component Manager or `EXTRA_COMPONENT_DIRS`, require
-`keemash_mesh_core`, and keep only their transport adapter, telemetry provider,
-command adapter and hardware modules.
+`keemash_mesh_core`, and keep only their transport binding, web/legacy glue,
+node-specific recovery policy, command adapter and hardware modules. Firmware provides
+strong hook implementations declared in `keemash_mesh_hooks.h`.
 
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00020100UL
-#error "firmware requires keemash_mesh_core 0.2.1"
+#if KEEMASH_MESH_CORE_VERSION != 0x00030000UL
+#error "firmware requires keemash_mesh_core 0.3.0"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.2.1` when integrating the component into
+Use a fixed commit or tag such as `v0.3.0` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults

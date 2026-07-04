@@ -65,4 +65,13 @@ menu "KeeMASH Reliable Mesh"
         range 0 10000
         default 0
 
+    config KEEMASH_NODE_PSRAM_EXPECTED_BYTES
+        int "Expected node PSRAM capacity when PSRAM is disabled"
+        range 0 16777216
+        default 0
+        help
+            Used by the generic typed memory telemetry helper when PSRAM is
+            not active but the board definition wants to advertise possible
+            PSRAM capacity. Leave 0 when unknown.
+
 endmenu
