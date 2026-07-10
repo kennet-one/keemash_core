@@ -33,6 +33,8 @@ void keemash_mesh_root_on_control_event(const char *text);
 void keemash_mesh_root_on_state_changed(void);
 
 // Node application hooks. Default weak implementations keep unsupported behavior safe.
+bool keemash_mesh_node_on_control_command_result(const char *text, uint8_t *status,
+                                                 char *result, size_t result_size);
 bool keemash_mesh_node_on_control_command(const char *text);
 void keemash_mesh_node_on_log_ctrl(bool enable);
 uint32_t keemash_mesh_node_v1_ok_age_ms(void);

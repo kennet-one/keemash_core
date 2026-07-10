@@ -206,6 +206,7 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 	uint8_t status = MESH_V2_CONTROL_STATUS_OK;
 	const char *result_text = "accepted";
 	char debug_result[48];
+	char app_result[MESH_V2_CONTROL_TEXT_MAX + 1] = "";
 	if (strcmp(text, "@dbg:dedupe") == 0) {
 		s_debug_dedupe_action_count++;
 		snprintf(debug_result, sizeof(debug_result),
@@ -220,6 +221,14 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		ctrl.enable = text[5] == '1' ? 1 : 0;
 		keemash_mesh_node_on_log_ctrl(ctrl.enable ? true : false);
 		result_text = ctrl.enable ? "log enabled" : "log disabled";
+	} else if (keemash_mesh_node_on_control_command_result(
+		           text, &status, app_result, sizeof(app_result))) {
+		app_result[sizeof(app_result) - 1] = '\0';
+		if (app_result[0]) {
+			result_text = app_result;
+		} else {
+			result_text = status == MESH_V2_CONTROL_STATUS_OK ? "accepted" : "failed";
+		}
 	} else if (!keemash_mesh_node_on_control_command(text)) {
 		status = MESH_V2_CONTROL_STATUS_UNSUPPORTED;
 		result_text = "unsupported";

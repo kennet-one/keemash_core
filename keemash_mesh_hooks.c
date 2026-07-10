@@ -58,6 +58,15 @@ void __attribute__((weak)) keemash_mesh_root_on_state_changed(void)
 {
 }
 
+bool __attribute__((weak)) keemash_mesh_node_on_control_command_result(const char *text,
+                                                                       uint8_t *status,
+                                                                       char *result,
+                                                                       size_t result_size)
+{
+    (void)text; (void)status; (void)result; (void)result_size;
+    return false;
+}
+
 bool __attribute__((weak)) keemash_mesh_node_on_control_command(const char *text)
 {
     (void)text;
