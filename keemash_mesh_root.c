@@ -813,11 +813,8 @@ static void handle_tunnel_data(const mesh_v2_hdr_t *h, const uint8_t *payload)
 	if (st) {
 		if (st->session_id != h->session_id) {
 			reset_session_locked(st, h);
-			if (t->seq > st->rx[t->channel_id].expected_seq) {
+			if (t->seq > 1U) {
 				tunnel_rx_channel_t *new_rx = &st->rx[t->channel_id];
-				new_rx->gap_count++;
-				new_rx->lost_count++;
-				new_rx->has_gap = true;
 				new_rx->expected_seq = t->seq;
 				new_rx->highest_seen_seq = t->seq;
 			}
@@ -879,10 +876,7 @@ static void handle_reliable_legacy_v2(const uint8_t from[6], const mesh_v2_hdr_t
 	if (st) {
 		if (st->session_id != h->session_id) {
 			reset_session_locked(st, h);
-			if (h->seq > st->expected_seq) {
-				st->gap_count++;
-				st->lost_count++;
-				st->has_gap = true;
+			if (h->seq > 1U) {
 				st->expected_seq = h->seq;
 				st->highest_seen_seq = h->seq;
 			}
