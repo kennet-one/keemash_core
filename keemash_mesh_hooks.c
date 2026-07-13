@@ -54,6 +54,19 @@ void __attribute__((weak)) keemash_mesh_root_on_control_event(const char *text)
     (void)text;
 }
 
+void __attribute__((weak)) keemash_mesh_root_on_control(const uint8_t peer[6],
+                                                         uint32_t root_session,
+                                                         uint32_t node_session,
+                                                         uint8_t kind,
+                                                         uint32_t command_id,
+                                                         uint8_t status,
+                                                         const char *text)
+{
+    (void)peer; (void)root_session; (void)node_session;
+    (void)command_id; (void)status;
+    if (kind == MESH_V2_CONTROL_EVENT) keemash_mesh_root_on_control_event(text);
+}
+
 void __attribute__((weak)) keemash_mesh_root_on_state_changed(void)
 {
 }
@@ -86,4 +99,10 @@ uint32_t __attribute__((weak)) keemash_mesh_node_v1_ok_age_ms(void)
 bool __attribute__((weak)) keemash_mesh_node_log_stream_enabled(void)
 {
     return false;
+}
+
+void __attribute__((weak)) keemash_mesh_node_on_time_sync(
+    const mesh_v2_time_payload_t *time_sync)
+{
+    (void)time_sync;
 }

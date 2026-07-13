@@ -15,9 +15,21 @@ extern "C" {
 #define KEEMASH_REL_PRIORITY_LOG	0
 #define KEEMASH_REL_PRIORITY_NORMAL	1
 #define KEEMASH_REL_PRIORITY_HIGH	2
-#define KEEMASH_REL_PRIORITY_CONTROL	3
+#define KEEMASH_REL_PRIORITY_OTA	3
+#define KEEMASH_REL_PRIORITY_CONTROL	4
 
 typedef struct keemash_rel_ctx keemash_rel_ctx_t;
+
+typedef enum {
+	KEEMASH_REL_SUBMIT_REJECTED = 0,
+	KEEMASH_REL_SUBMIT_ACCEPTED_QUEUED = 1,
+} keemash_rel_submit_state_t;
+
+typedef struct {
+	keemash_rel_submit_state_t state;
+	esp_err_t initial_transport_err;
+	uint32_t stream_id;
+} keemash_rel_submit_info_t;
 
 typedef esp_err_t (*keemash_rel_send_fn)(void *user, const uint8_t dst[6],
 					 const void *packet, size_t packet_len);
@@ -36,6 +48,12 @@ typedef struct {
 	uint16_t rx_slots;
 	uint16_t reassembly_slots;
 	uint16_t reserved_control_slots;
+	uint16_t per_peer_tx_slots;
+	uint16_t per_peer_rx_slots;
+	uint16_t per_peer_reassembly_slots;
+	uint16_t per_peer_control_reserve;
+	uint32_t route_grace_ms;
+	uint32_t stale_peer_ms;
 	uint32_t initial_rto_ms;
 	uint32_t min_rto_ms;
 	uint32_t max_rto_ms;
@@ -63,6 +81,10 @@ typedef struct {
 #define KEEMASH_REL_DEBUG_CASE_PARALLEL_CHANNELS 0x00000020UL
 #define KEEMASH_REL_DEBUG_CASE_FINAL_DATA	0x00000040UL
 #define KEEMASH_REL_DEBUG_CASE_FINAL_ACK	0x00000080UL
+#define KEEMASH_REL_DEBUG_CASE_ROUTE_RESUME	0x00000100UL
+#define KEEMASH_REL_DEBUG_CASE_SOURCE_AUTH	0x00000200UL
+#define KEEMASH_REL_DEBUG_CASE_ROUTE_TIMEOUT	0x00000400UL
+#define KEEMASH_REL_DEBUG_CASE_TIME_LATEST	0x00000800UL
 #define KEEMASH_REL_DEBUG_CASE_ALL		( \
 	KEEMASH_REL_DEBUG_CASE_SEQ_WRAP | \
 	KEEMASH_REL_DEBUG_CASE_SESSION_RESET | \
@@ -71,7 +93,11 @@ typedef struct {
 	KEEMASH_REL_DEBUG_CASE_LOG_STRESS | \
 	KEEMASH_REL_DEBUG_CASE_PARALLEL_CHANNELS | \
 	KEEMASH_REL_DEBUG_CASE_FINAL_DATA | \
-	KEEMASH_REL_DEBUG_CASE_FINAL_ACK)
+	KEEMASH_REL_DEBUG_CASE_FINAL_ACK | \
+	KEEMASH_REL_DEBUG_CASE_ROUTE_RESUME | \
+	KEEMASH_REL_DEBUG_CASE_SOURCE_AUTH | \
+	KEEMASH_REL_DEBUG_CASE_ROUTE_TIMEOUT | \
+	KEEMASH_REL_DEBUG_CASE_TIME_LATEST)
 
 typedef struct {
 	bool pass;
@@ -111,6 +137,10 @@ typedef struct {
 	uint32_t replay_count;
 	uint32_t lost_count;
 	uint8_t lost_reason;
+	bool route_up;
+	uint32_t route_down_age_ms;
+	uint32_t last_rx_age_ms;
+	uint32_t capabilities;
 } keemash_rel_stats_t;
 
 esp_err_t keemash_rel_init(keemash_rel_ctx_t **out, const keemash_rel_config_t *config);
@@ -123,6 +153,9 @@ esp_err_t keemash_rel_send_hello(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 esp_err_t keemash_rel_send(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 			   uint8_t channel, const void *payload, size_t payload_len,
 			   uint8_t priority);
+esp_err_t keemash_rel_submit(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
+			     uint8_t channel, const void *payload, size_t payload_len,
+			     uint8_t priority, keemash_rel_submit_info_t *info);
 esp_err_t keemash_rel_handle_rx(keemash_rel_ctx_t *ctx, const uint8_t from[6],
 				const void *packet, size_t packet_len);
 void keemash_rel_poll(keemash_rel_ctx_t *ctx);
@@ -131,6 +164,15 @@ void keemash_rel_reset_peer(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 bool keemash_rel_peer_ready(keemash_rel_ctx_t *ctx, const uint8_t peer[6]);
 bool keemash_rel_stats(keemash_rel_ctx_t *ctx, const uint8_t peer[6],
 		       keemash_rel_stats_t *out);
+uint32_t keemash_rel_channel_unacked(keemash_rel_ctx_t *ctx,
+				     const uint8_t peer[6], uint8_t channel);
+uint32_t keemash_rel_supersede_channel(keemash_rel_ctx_t *ctx,
+				       const uint8_t peer[6], uint8_t channel);
+esp_err_t keemash_rel_peer_route(keemash_rel_ctx_t *ctx,
+				 const uint8_t peer[6], bool route_up);
+esp_err_t keemash_rel_remove_peer(keemash_rel_ctx_t *ctx, const uint8_t peer[6]);
+uint32_t keemash_rel_peer_capabilities(keemash_rel_ctx_t *ctx,
+				       const uint8_t peer[6]);
 esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
 						   const uint8_t peer_mac[6],
 						   uint8_t channel,

@@ -15,6 +15,10 @@ extern "C" {
 
 typedef struct {
 	bool seen;
+	uint8_t peer_mac[6];
+	uint32_t command_id;
+	uint32_t root_session_id;
+	uint32_t node_session_id;
 	uint8_t status;
 	uint32_t seen_count;
 	uint32_t updated_ms;
@@ -48,6 +52,10 @@ typedef struct {
 	uint32_t overflow_count;
 	uint8_t lost_reason;
 	uint32_t capabilities;
+	bool route_up;
+	uint32_t route_down_age_ms;
+	uint32_t duplicate_tag_count;
+	uint32_t time_superseded_count;
 } mesh_v2_root_stats_t;
 
 esp_err_t mesh_v2_root_init(void);
@@ -63,7 +71,20 @@ esp_err_t mesh_v2_root_send_command(const uint8_t mac[6], uint32_t command_id,
 				    const char *command);
 bool mesh_v2_root_command_result(uint32_t command_id,
 					 mesh_v2_command_result_t *out);
+bool mesh_v2_root_command_result_for_peer(const uint8_t mac[6], uint32_t command_id,
+					  mesh_v2_command_result_t *out);
+uint32_t mesh_v2_root_next_command_id(void);
 bool mesh_v2_root_find_ready_by_tag(const char *tag, uint8_t mac[6]);
+bool mesh_v2_root_find_lossless_by_tag(const char *tag, uint8_t mac[6],
+				       uint32_t required_caps);
+bool mesh_v2_root_peer_advertises_lossless(const uint8_t mac[6],
+					   uint32_t required_caps);
+bool mesh_v2_root_peer_lossless(const uint8_t mac[6], uint32_t required_caps);
+esp_err_t mesh_v2_root_queue_time(const uint8_t mac[6], uint32_t generation,
+				  int64_t epoch_sec, uint32_t source_uptime_s);
+size_t mesh_v2_root_queue_time_all(uint32_t generation, int64_t epoch_sec,
+				   uint32_t source_uptime_s);
+void mesh_v2_root_sync_routes(const uint8_t *macs, size_t count);
 
 #ifdef __cplusplus
 }

@@ -30,6 +30,10 @@ void keemash_mesh_root_on_ota_status(const uint8_t mac[6],
                                      size_t status_len);
 void keemash_mesh_root_on_topology(const uint8_t mac[6], const void *payload, size_t payload_len);
 void keemash_mesh_root_on_control_event(const char *text);
+void keemash_mesh_root_on_control(const uint8_t peer[6], uint32_t root_session,
+				  uint32_t node_session, uint8_t kind,
+				  uint32_t command_id, uint8_t status,
+				  const char *text);
 void keemash_mesh_root_on_state_changed(void);
 
 // Node application hooks. Default weak implementations keep unsupported behavior safe.
@@ -39,6 +43,7 @@ bool keemash_mesh_node_on_control_command(const char *text);
 void keemash_mesh_node_on_log_ctrl(bool enable);
 uint32_t keemash_mesh_node_v1_ok_age_ms(void);
 bool keemash_mesh_node_log_stream_enabled(void);
+void keemash_mesh_node_on_time_sync(const mesh_v2_time_payload_t *time_sync);
 
 #ifdef __cplusplus
 }

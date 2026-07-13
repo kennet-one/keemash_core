@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.3.4`.
+Current version: `0.4.0`.
 
 License: `GPL-2.0-only`.
 
@@ -21,12 +21,18 @@ License: `GPL-2.0-only`.
 - channel priorities and reserved CONTROL slots;
 - deterministic fault injection;
 - typed reliable OTA payloads on the reserved OTA channel;
+- serialized priority TX broker with explicit queue ownership;
+- route-aware retry pause/resume with bounded grace and explicit route loss;
+- transport-origin validation for authenticated root/node traffic;
+- latest-wins typed TIME delivery without stale timestamp replay;
 - reusable root and node facades with ESP-MESH transport hooks;
 - generic task, memory, OTA slot and OTA v2 receiver helpers.
 
-ESP-MESH remains responsible for multi-hop routing. Manual reboot and time sync
-stay outside the reliable replay layer. OTA uses the reliable layer only when
-firmware explicitly advertises `MESH_V2_CAP_OTA`.
+ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
+reliability between a node and root; it does not add an application hop-by-hop
+router. Manual reboot is a typed CONTROL command, time sync uses a typed
+latest-wins channel, and OTA uses the reliable layer only when firmware
+explicitly advertises `MESH_V2_CAP_OTA`.
 
 ## Integration
 
@@ -38,12 +44,12 @@ strong hook implementations declared in `keemash_mesh_hooks.h`.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00030400UL
-#error "firmware requires keemash_mesh_core 0.3.4"
+#if KEEMASH_MESH_CORE_VERSION != 0x00040000UL
+#error "firmware requires keemash_mesh_core 0.4.0"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.3.4` when integrating the component into
+Use a fixed commit or tag such as `v0.4.0` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults

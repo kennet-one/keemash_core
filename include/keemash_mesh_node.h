@@ -15,7 +15,9 @@ extern "C" {
 void mesh_v2_node_init(const char *tag);
 void mesh_v2_node_on_mesh_connected(void);
 void mesh_v2_node_on_mesh_disconnected(void);
-esp_err_t mesh_v2_node_handle_rx(const void *pkt_buf, size_t pkt_len);
+esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, size_t pkt_len);
+void mesh_v2_node_set_root_mac(const uint8_t root_mac[6]);
+void mesh_v2_node_set_relay_eligible(bool eligible);
 void mesh_v2_node_update_topology(const uint8_t parent_mac[6],
                                   const uint8_t root_mac[6],
                                   uint16_t layer,

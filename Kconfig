@@ -1,5 +1,13 @@
 menu "KeeMASH Reliable Mesh"
 
+    config KEEMASH_V2_COMPAT_TUNNEL_ENABLE
+        bool "Enable pre-lossless V2 tunnel compatibility"
+        default y
+        help
+            Keep parsing and transmitting the older V2 tunnel profile for
+            legacy peers. Disable on nodes paired exclusively with a lossless
+            root so transient reliable errors never downgrade transport.
+
     config KEEMASH_REL_INITIAL_RTO_MS
         int "Initial retransmission timeout (ms)"
         range 500 5000
@@ -24,6 +32,16 @@ menu "KeeMASH Reliable Mesh"
         int "Fragment reassembly timeout (ms)"
         range 1000 60000
         default 10000
+
+    config KEEMASH_REL_ROUTE_GRACE_MS
+        int "Route outage replay retention (ms)"
+        range 5000 300000
+        default 90000
+
+    config KEEMASH_REL_STALE_PEER_MS
+        int "Offline peer eviction age (ms)"
+        range 60000 3600000
+        default 300000
 
     config KEEMASH_REL_FAULT_DROP_DATA_EVERY
         int "Debug: drop every Nth reliable DATA packet"
