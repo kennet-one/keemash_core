@@ -67,7 +67,8 @@ static bool s_root_ready = false;
 static uint32_t s_last_ack_ms = 0;
 static uint32_t s_last_hello_ms = 0;
 static uint8_t s_parent_mac[6] = {0};
-static uint8_t s_root_mac[6] = {0};
+static uint8_t s_root_origin_mac[6] = {0};
+static uint8_t s_topology_root_mac[6] = {0};
 static bool s_relay_eligible = false;
 static uint16_t s_layer = 0;
 static uint16_t s_max_layer = 0;
@@ -842,6 +843,7 @@ void mesh_v2_node_on_mesh_disconnected(void)
 	portENTER_CRITICAL(&s_lock);
 	s_root_ready = false;
 	s_last_ack_ms = 0;
+	memset(s_root_origin_mac, 0, sizeof(s_root_origin_mac));
 	portEXIT_CRITICAL(&s_lock);
 	if (s_rel && s_rel_lock &&
 	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -854,9 +856,18 @@ void mesh_v2_node_on_mesh_disconnected(void)
 void mesh_v2_node_set_root_mac(const uint8_t root_mac[6])
 {
 	portENTER_CRITICAL(&s_lock);
-	if (root_mac) mac_copy(s_root_mac, root_mac);
-	else memset(s_root_mac, 0, sizeof(s_root_mac));
+	if (root_mac) mac_copy(s_root_origin_mac, root_mac);
+	else memset(s_root_origin_mac, 0, sizeof(s_root_origin_mac));
 	portEXIT_CRITICAL(&s_lock);
+}
+
+bool mesh_v2_node_get_root_mac(uint8_t root_mac[6])
+{
+	if (!root_mac) return false;
+	portENTER_CRITICAL(&s_lock);
+	mac_copy(root_mac, s_root_origin_mac);
+	portEXIT_CRITICAL(&s_lock);
+	return !mac_is_zero(root_mac);
 }
 
 void mesh_v2_node_set_relay_eligible(bool eligible)
@@ -878,7 +889,7 @@ void mesh_v2_node_update_topology(const uint8_t parent_mac[6],
 		mac_copy(s_parent_mac, parent_mac);
 	}
 	if (root_mac) {
-		mac_copy(s_root_mac, root_mac);
+		mac_copy(s_topology_root_mac, root_mac);
 	}
 	s_layer = layer;
 	s_max_layer = max_layer;
@@ -1041,7 +1052,7 @@ esp_err_t mesh_v2_node_send_topology(void)
 	portENTER_CRITICAL(&s_lock);
 	copy_tag(p.v2.base.tag, sizeof(p.v2.base.tag), s_tag);
 	mac_copy(p.v2.base.parent_mac, s_parent_mac);
-	mac_copy(p.v2.base.root_mac, s_root_mac);
+	mac_copy(p.v2.base.root_mac, s_topology_root_mac);
 	p.v2.base.layer = s_layer;
 	p.v2.base.max_layer = s_max_layer;
 	p.v2.base.parent_rssi = s_parent_rssi;
@@ -1489,7 +1500,7 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 		const mesh_v2_hdr_t *probe = pkt_buf;
 		uint8_t expected_root[6] = {0};
 		portENTER_CRITICAL(&s_lock);
-		mac_copy(expected_root, s_root_mac);
+		mac_copy(expected_root, s_root_origin_mac);
 		portEXIT_CRITICAL(&s_lock);
 		if (!mac_eq(probe->src_mac, from) ||
 		    (!mac_is_zero(expected_root) && !mac_eq(expected_root, from))) {

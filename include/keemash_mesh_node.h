@@ -16,7 +16,10 @@ void mesh_v2_node_init(const char *tag);
 void mesh_v2_node_on_mesh_connected(void);
 void mesh_v2_node_on_mesh_disconnected(void);
 esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, size_t pkt_len);
+// Set the protocol-origin STA MAC, not the ESP-MESH root SoftAP address.
+// Pass NULL after a route/root change so HELLO_ACK can bind the new origin.
 void mesh_v2_node_set_root_mac(const uint8_t root_mac[6]);
+bool mesh_v2_node_get_root_mac(uint8_t root_mac[6]);
 void mesh_v2_node_set_relay_eligible(bool eligible);
 void mesh_v2_node_update_topology(const uint8_t parent_mac[6],
                                   const uint8_t root_mac[6],
