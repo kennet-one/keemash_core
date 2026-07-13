@@ -1481,6 +1481,7 @@ bool mesh_v2_root_find_ready_by_tag(const char *tag, uint8_t mac[6])
 	for (uint32_t i = 0; i < MESH_V2_MAX_NODES; i++) {
 		if (s_nodes[i].used &&
 		    s_nodes[i].route_up &&
+		    s_nodes[i].last_v2_ms != 0 &&
 		    (uint32_t)(now - s_nodes[i].last_v2_ms) < 75000U &&
 		    strncmp(s_nodes[i].tag, tag, sizeof(s_nodes[i].tag)) == 0) {
 			matches++;
@@ -1509,9 +1510,13 @@ bool mesh_v2_root_find_lossless_by_tag(const char *tag, uint8_t mac[6],
 {
 	if (!tag || !tag[0] || !mac) return false;
 	uint32_t matches = 0;
+	uint32_t now = ms_now();
 	portENTER_CRITICAL(&s_lock);
 	for (uint32_t i = 0; i < MESH_V2_MAX_NODES; i++) {
 		if (s_nodes[i].used &&
+		    s_nodes[i].route_up &&
+		    s_nodes[i].last_v2_ms != 0 &&
+		    (uint32_t)(now - s_nodes[i].last_v2_ms) < 75000U &&
 		    strncmp(s_nodes[i].tag, tag, sizeof(s_nodes[i].tag)) == 0) {
 			matches++;
 			mac_copy(mac, s_nodes[i].mac);
@@ -1528,11 +1533,12 @@ bool mesh_v2_root_find_lossless_by_tag(const char *tag, uint8_t mac[6],
 	if (matches != 1 || !s_rel || !s_rel_lock) return false;
 	if (xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) != pdTRUE)
 		return false;
+	bool ready = keemash_rel_peer_ready(s_rel, mac);
 	uint32_t caps = keemash_rel_peer_capabilities(s_rel, mac);
 	xSemaphoreGiveRecursive(s_rel_lock);
 	uint32_t required = MESH_V2_CAP_RELIABLE_E2E | MESH_V2_CAP_SACK |
 			    MESH_V2_CAP_FRAGMENT | required_caps;
-	return (caps & required) == required;
+	return ready && (caps & required) == required;
 }
 
 bool mesh_v2_root_peer_advertises_lossless(const uint8_t mac[6],
