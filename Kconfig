@@ -92,4 +92,16 @@ menu "KeeMASH Reliable Mesh"
             not active but the board definition wants to advertise possible
             PSRAM capacity. Leave 0 when unknown.
 
+    config KEEMASH_NODE_V2_LOG_ENABLE
+        bool "Use reliable V2 for node log streaming"
+        default y
+        help
+            Send captured node logs through the reliable LOG channel. A V1
+            fallback is considered only when compatibility support is enabled.
+
+    config KEEMASH_NODEINFO_PERIOD_MS
+        int "Node heartbeat period (ms)"
+        range 5000 300000
+        default 15000
+
 endmenu

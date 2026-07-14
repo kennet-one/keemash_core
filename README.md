@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.4.2`.
+Current version: `0.5.0`.
 
 License: `GPL-2.0-only`.
 
@@ -27,6 +27,10 @@ License: `GPL-2.0-only`.
 - latest-wins typed TIME delivery without stale timestamp replay;
 - reusable root and node facades with ESP-MESH transport hooks;
 - generic task, memory, OTA slot and OTA v2 receiver helpers.
+- reusable node log capture, NODEINFO heartbeat and recovery burst runtime;
+- reusable V1/V2 time-application helper;
+- reusable timestamped UART log hook;
+- automatic TX broker packet-priority classification.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
 reliability between a node and root; it does not add an application hop-by-hop
@@ -44,12 +48,12 @@ strong hook implementations declared in `keemash_mesh_hooks.h`.
 Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00040200UL
-#error "firmware requires keemash_mesh_core 0.4.2"
+#if KEEMASH_MESH_CORE_VERSION != 0x00050000UL
+#error "firmware requires keemash_mesh_core 0.5.0"
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.4.2` when integrating the component into
+Use a fixed commit or tag such as `v0.5.0` when integrating the component into
 node firmware repositories.
 
 ## Production Defaults

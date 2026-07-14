@@ -9,6 +9,8 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "keemash_mesh_core.h"
+
 typedef struct {
 	bool used;
 	bool sending;
@@ -160,6 +162,34 @@ esp_err_t keemash_mesh_tx_broker_submit(keemash_mesh_tx_broker_t *broker,
 	xSemaphoreGive(broker->lock);
 	if (task) xTaskNotifyGive(task);
 	return ESP_OK;
+}
+
+uint8_t keemash_mesh_packet_priority(const void *packet, size_t packet_len)
+{
+	if (!packet || packet_len < sizeof(mesh_v2_hdr_t)) {
+		return KEEMASH_REL_PRIORITY_NORMAL;
+	}
+	const mesh_v2_hdr_t *header = packet;
+	if (header->magic != MESH_PKT_MAGIC || header->version != MESH_PKT_VERSION_V2) {
+		return KEEMASH_REL_PRIORITY_NORMAL;
+	}
+	if (header->type != MESH_V2_TYPE_RELIABLE_DATA ||
+	    header->payload_len < sizeof(mesh_v2_reliable_hdr_t) ||
+	    packet_len < sizeof(*header) + sizeof(mesh_v2_reliable_hdr_t)) {
+		return KEEMASH_REL_PRIORITY_CONTROL;
+	}
+	const mesh_v2_reliable_hdr_t *reliable =
+		(const mesh_v2_reliable_hdr_t *)((const uint8_t *)packet + sizeof(*header));
+	return reliable->priority;
+}
+
+esp_err_t keemash_mesh_tx_broker_submit_auto(keemash_mesh_tx_broker_t *broker,
+						     const uint8_t dst[6],
+						     const void *packet,
+						     size_t packet_len)
+{
+	return keemash_mesh_tx_broker_submit(broker, dst, packet, packet_len,
+	                                      keemash_mesh_packet_priority(packet, packet_len));
 }
 
 void keemash_mesh_tx_broker_stats(keemash_mesh_tx_broker_t *broker,

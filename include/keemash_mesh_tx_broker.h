@@ -49,6 +49,15 @@ esp_err_t keemash_mesh_tx_broker_submit(keemash_mesh_tx_broker_t *broker,
 						size_t packet_len,
 						uint8_t priority);
 
+// Classify a KeeMASH packet from its reliable header. Non-reliable packets use
+// NORMAL priority, while reliability control frames use CONTROL priority.
+uint8_t keemash_mesh_packet_priority(const void *packet, size_t packet_len);
+
+esp_err_t keemash_mesh_tx_broker_submit_auto(keemash_mesh_tx_broker_t *broker,
+						     const uint8_t dst[6],
+						     const void *packet,
+						     size_t packet_len);
+
 void keemash_mesh_tx_broker_stats(keemash_mesh_tx_broker_t *broker,
 					  keemash_mesh_tx_broker_stats_t *out);
 
