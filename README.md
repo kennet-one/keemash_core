@@ -5,7 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Current version: `0.5.0`.
+Latest stable release: `v0.5.1`.
+API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `GPL-2.0-only`.
 
@@ -45,7 +46,9 @@ Firmware projects add this component to ESP-IDF Component Manager or `EXTRA_COMP
 node-specific recovery policy, command adapter and hardware modules. Firmware provides
 strong hook implementations declared in `keemash_mesh_hooks.h`.
 
-Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
+Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
+as the compile-time API compatibility level. Release `v0.5.1` keeps the `0.5.0`
+API level because it does not change the node-side API or wire protocol:
 
 ```c
 #if KEEMASH_MESH_CORE_VERSION != 0x00050000UL
@@ -53,8 +56,29 @@ Consumers must verify `KEEMASH_MESH_CORE_VERSION`. The current firmware pin is:
 #endif
 ```
 
-Use a fixed commit or tag such as `v0.5.0` when integrating the component into
-node firmware repositories.
+Use a fixed tag such as `v0.5.1` when integrating the component into node
+firmware repositories. New migrations should target the latest stable release
+unless a node-specific compatibility check requires an older pin.
+
+### Compatibility And Upgrade Guidance
+
+`v0.5.1` corrects root-side diagnostics: a historical `lost_count` no longer
+keeps a peer marked as having an active loss after the receive gap has closed.
+This patch does not change packets on the wire, public node-side APIs, or node
+runtime behavior.
+
+A patch release that has no node-side API, wire-protocol, or node-runtime change
+does not require an immediate rebuild and reflash of every node. Existing nodes
+may keep their compatible pin and move to the newer patch during their next
+meaningful firmware change. Release notes must explicitly call out any patch
+that does require a coordinated node upgrade.
+
+| Consumer | Core pin | Guidance |
+| --- | --- | --- |
+| `node0` | `v0.5.1` | Current root release; includes the diagnostics fix. |
+| `kPowerLed` | `v0.5.1` | Current validated node consumer. |
+| `choinka` | `v0.5.0` | API-compatible; upgrade with its next meaningful firmware change. |
+| Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults
 
