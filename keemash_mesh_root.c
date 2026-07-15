@@ -1177,7 +1177,8 @@ bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 			out->capabilities |= rel.capabilities;
 			out->replay_count += rel.replay_count;
 			out->lost_count += rel.lost_count;
-			out->has_gap = out->has_gap || rel.lost_count > 0;
+			/* Lost count is historical; only buffered out-of-order data is active. */
+			out->has_gap = out->has_gap || rel.reorder_depth > 0;
 		}
 		xSemaphoreGiveRecursive(s_rel_lock);
 	}
