@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.3`.
+Latest stable release: `v0.5.4`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -61,6 +61,10 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.5.4` separates the ESP-IDF package release version from the public API
+compatibility level. This lets the Component Manager resolve the requested Git
+tag while `KEEMASH_MESH_CORE_VERSION` correctly remains at `0.5.0`.
 
 `v0.5.3` keeps the node boot session stable across ESP-MESH parent changes.
 Unacknowledged end-to-end frames therefore remain replayable after a route
