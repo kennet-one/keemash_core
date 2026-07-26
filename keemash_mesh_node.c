@@ -835,7 +835,12 @@ void mesh_v2_node_on_mesh_connected(void)
 		(void)keemash_rel_peer_route(s_rel, root, true);
 		xSemaphoreGiveRecursive(s_rel_lock);
 	}
-	send_hello(!keemash_mesh_ota_receiver_active());
+	/*
+	 * A parent switch changes the ESP-MESH route, not the node boot session.
+	 * Keep the session and replay state so unacknowledged end-to-end frames can
+	 * continue through the new parent without being reported as lost.
+	 */
+	send_hello(false);
 }
 
 void mesh_v2_node_on_mesh_disconnected(void)

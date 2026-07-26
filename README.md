@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.2`.
+Latest stable release: `v0.5.3`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -61,6 +61,10 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.5.3` keeps the node boot session stable across ESP-MESH parent changes.
+Unacknowledged end-to-end frames therefore remain replayable after a route
+switch instead of being reported as `SESSION_RESET` losses.
 
 `v0.5.1` corrects root-side diagnostics: a historical `lost_count` no longer
 keeps a peer marked as having an active loss after the receive gap has closed.
