@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Minimal transport/runtime adapter for a new ESP-IDF mesh node.
 
 #include <stdbool.h>

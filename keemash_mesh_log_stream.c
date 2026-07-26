@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: Apache-2.0
 #include "keemash_mesh_log_stream.h"
 
 #include <stdarg.h>
