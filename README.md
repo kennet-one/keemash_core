@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.4`.
+Latest stable release: `v0.5.5`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -62,6 +62,12 @@ unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
 
+`v0.5.5` restores typed TASK CPU telemetry. The node facade keeps a one-second
+runtime-counter baseline and computes total and per-task CPU deltas immediately
+when the root requests a snapshot. It adds no wire delay and keeps the existing
+TASK payload unchanged. Migrated nodes must rebuild on this patch to expose CPU
+telemetry.
+
 `v0.5.4` separates the ESP-IDF package release version from the public API
 compatibility level. This lets the Component Manager resolve the requested Git
 tag while `KEEMASH_MESH_CORE_VERSION` correctly remains at `0.5.0`.
@@ -83,9 +89,10 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.5.1` | Current root release; includes the diagnostics fix. |
-| `kPowerLed` | `v0.5.1` | Current validated node consumer. |
-| `choinka` | `v0.5.0` | API-compatible; upgrade with its next meaningful firmware change. |
+| `node0` | `v0.5.5` | Current root release; requests TASK snapshots at low latency. |
+| `kPowerLed` | `v0.5.5` | Current validated node consumer. |
+| `choinka` | `v0.5.5` | Current validated node consumer. |
+| `humidifier` | `v0.5.5` | Current validated node consumer. |
 | Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults

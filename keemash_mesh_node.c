@@ -37,6 +37,17 @@ static const char *TAG = "mesh_v2";
 #define MESH_V2_HELLO_RETRY_MS 5000
 #endif
 
+#define TASK_SLOT_COUNT 25
+#define TASK_CPU_SAMPLE_PERIOD_MS 1000U
+
+#if defined(configNUMBER_OF_CORES)
+#define TASK_CPU_CORE_COUNT configNUMBER_OF_CORES
+#elif defined(portNUM_PROCESSORS)
+#define TASK_CPU_CORE_COUNT portNUM_PROCESSORS
+#else
+#define TASK_CPU_CORE_COUNT 1
+#endif
+
 typedef struct {
 	bool used;
 	uint32_t seq;
@@ -83,6 +94,18 @@ static keemash_rel_ctx_t *s_rel = NULL;
 static SemaphoreHandle_t s_rel_lock = NULL;
 static TaskHandle_t s_rel_task = NULL;
 static uint32_t s_rel_last_hello_ms = 0;
+static SemaphoreHandle_t s_task_cpu_lock = NULL;
+static uint32_t s_task_cpu_last_sample_ms = 0;
+
+typedef struct {
+	UBaseType_t task_number;
+	uint32_t run_time;
+} task_cpu_baseline_entry_t;
+
+static task_cpu_baseline_entry_t s_task_cpu_baseline[TASK_SLOT_COUNT];
+static UBaseType_t s_task_cpu_baseline_count = 0;
+static uint32_t s_task_cpu_baseline_total = 0;
+static bool s_task_cpu_baseline_valid = false;
 
 typedef struct {
 	bool used;
@@ -98,6 +121,7 @@ static uint32_t s_debug_dedupe_action_count = 0;
 static void mac_copy(uint8_t dst[6], const uint8_t src[6]);
 static void local_mac(uint8_t mac[6]);
 static uint32_t ms_now(void);
+static void task_cpu_prime(void);
 static esp_err_t mesh_v2_node_send_task_snapshot(uint32_t request_id);
 
 static uint32_t node_capabilities(void)
@@ -270,12 +294,17 @@ static void rel_poll_task(void *arg)
 {
 	(void)arg;
 	for (;;) {
+		uint32_t now = ms_now();
+		if (s_task_cpu_last_sample_ms == 0 ||
+		    (uint32_t)(now - s_task_cpu_last_sample_ms) >=
+			    TASK_CPU_SAMPLE_PERIOD_MS) {
+			task_cpu_prime();
+		}
 		if (s_rel && s_rel_lock &&
 		    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
 			keemash_rel_poll(s_rel);
 			const uint8_t root[6] = {0};
 			keemash_rel_stats_t stats;
-			uint32_t now = ms_now();
 			bool ready = keemash_rel_stats(s_rel, root, &stats) && stats.ready;
 			bool stale = ready && stats.ack_age_ms != UINT32_MAX &&
 			             stats.ack_age_ms >= MESH_V2_ACK_STALE_MS;
@@ -411,6 +440,114 @@ static void copy_tag(char *dst, size_t dst_sz, const char *tag)
 	size_t n = strnlen(src, dst_sz - 1);
 	memcpy(dst, src, n);
 	dst[n] = '\0';
+}
+
+static int baseline_task_index(UBaseType_t task_number)
+{
+	for (UBaseType_t i = 0; i < s_task_cpu_baseline_count; i++) {
+		if (s_task_cpu_baseline[i].task_number == task_number) {
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+static bool task_cpu_sample(TaskStatus_t tasks[TASK_SLOT_COUNT],
+			    UBaseType_t *count_out,
+			    uint32_t *cpu_load_x10_out,
+			    int16_t task_cpu_x10[TASK_SLOT_COUNT])
+{
+	if (!tasks || !count_out || !cpu_load_x10_out || !task_cpu_x10 ||
+	    !s_task_cpu_lock) {
+		return false;
+	}
+	if (xSemaphoreTake(s_task_cpu_lock, pdMS_TO_TICKS(250)) != pdTRUE) {
+		return false;
+	}
+
+	uint32_t total_time = 0;
+	UBaseType_t count = uxTaskGetSystemState(tasks, TASK_SLOT_COUNT, &total_time);
+	if (count > TASK_SLOT_COUNT) {
+		count = TASK_SLOT_COUNT;
+	}
+	for (UBaseType_t i = 0; i < TASK_SLOT_COUNT; i++) {
+		task_cpu_x10[i] = -1;
+	}
+
+	bool cpu_valid = s_task_cpu_baseline_valid && count > 0;
+	uint32_t total_delta = total_time - s_task_cpu_baseline_total;
+	uint64_t capacity_delta = (uint64_t)total_delta * TASK_CPU_CORE_COUNT;
+	uint64_t idle_delta = 0;
+
+	if (capacity_delta == 0) {
+		cpu_valid = false;
+	}
+
+	for (UBaseType_t i = 0; i < count; i++) {
+		int prev_idx = baseline_task_index(tasks[i].xTaskNumber);
+		if (!cpu_valid || prev_idx < 0) {
+			continue;
+		}
+
+		uint32_t run_delta =
+			tasks[i].ulRunTimeCounter -
+			s_task_cpu_baseline[(UBaseType_t)prev_idx].run_time;
+		uint64_t scaled =
+			((uint64_t)run_delta * 1000U + capacity_delta / 2U) /
+			capacity_delta;
+		if (scaled > 1000U) {
+			scaled = 1000U;
+		}
+		task_cpu_x10[i] = (int16_t)scaled;
+
+		const char *name = tasks[i].pcTaskName ? tasks[i].pcTaskName : "";
+		if (strcmp(name, "IDLE0") == 0 || strcmp(name, "IDLE1") == 0 ||
+		    strcmp(name, "IDLE") == 0) {
+			idle_delta += run_delta;
+		}
+	}
+
+	if (cpu_valid) {
+		if (idle_delta > capacity_delta) {
+			idle_delta = capacity_delta;
+		}
+		uint64_t busy_delta = capacity_delta - idle_delta;
+		uint64_t scaled =
+			(busy_delta * 1000U + capacity_delta / 2U) /
+			capacity_delta;
+		if (scaled > 1000U) {
+			scaled = 1000U;
+		}
+		*cpu_load_x10_out = (uint32_t)scaled;
+	} else {
+		*cpu_load_x10_out = 0;
+	}
+
+	for (UBaseType_t i = 0; i < count; i++) {
+		s_task_cpu_baseline[i].task_number = tasks[i].xTaskNumber;
+		s_task_cpu_baseline[i].run_time = tasks[i].ulRunTimeCounter;
+	}
+	for (UBaseType_t i = count; i < s_task_cpu_baseline_count; i++) {
+		memset(&s_task_cpu_baseline[i], 0,
+		       sizeof(s_task_cpu_baseline[i]));
+	}
+	s_task_cpu_baseline_count = count;
+	s_task_cpu_baseline_total = total_time;
+	s_task_cpu_baseline_valid = count > 0;
+	s_task_cpu_last_sample_ms = ms_now();
+	*count_out = count;
+
+	xSemaphoreGive(s_task_cpu_lock);
+	return cpu_valid;
+}
+
+static void task_cpu_prime(void)
+{
+	TaskStatus_t tasks[TASK_SLOT_COUNT] = {0};
+	int16_t task_cpu_x10[TASK_SLOT_COUNT] = {0};
+	UBaseType_t count = 0;
+	uint32_t cpu_load_x10 = 0;
+	(void)task_cpu_sample(tasks, &count, &cpu_load_x10, task_cpu_x10);
 }
 
 static uint16_t crc16_update(uint16_t crc, const uint8_t *data, size_t len)
@@ -824,6 +961,15 @@ void mesh_v2_node_init(const char *tag)
 	}
 	copy_tag(s_tag, sizeof(s_tag), tag);
 	portEXIT_CRITICAL(&s_lock);
+	if (!s_task_cpu_lock) {
+		s_task_cpu_lock = xSemaphoreCreateMutex();
+		if (!s_task_cpu_lock) {
+			ESP_LOGW(TAG, "task CPU sampler disabled: no memory");
+		}
+	}
+	if (!s_task_cpu_baseline_valid) {
+		task_cpu_prime();
+	}
 	ESP_ERROR_CHECK_WITHOUT_ABORT(reliable_init());
 }
 
@@ -1126,18 +1272,17 @@ esp_err_t mesh_v2_node_send_topology(void)
 
 static esp_err_t mesh_v2_node_send_task_snapshot(uint32_t request_id)
 {
-	enum { TASK_SLOT_COUNT = 25 };
 	static TaskStatus_t tasks[TASK_SLOT_COUNT];
+	int16_t task_cpu_x10[TASK_SLOT_COUNT];
 	UBaseType_t count = 0;
-	uint32_t total_time = 0;
+	uint32_t cpu_load_x10 = 0;
+	bool cpu_valid = false;
 	char tag[MESH_V2_TAG_MAX];
 	esp_err_t first_err = ESP_OK;
 
 	memset(tasks, 0, sizeof(tasks));
-	count = uxTaskGetSystemState(tasks, TASK_SLOT_COUNT, &total_time);
-	if (count > TASK_SLOT_COUNT) {
-		count = TASK_SLOT_COUNT;
-	}
+	cpu_valid = task_cpu_sample(tasks, &count, &cpu_load_x10,
+				    task_cpu_x10);
 
 	portENTER_CRITICAL(&s_lock);
 	copy_tag(tag, sizeof(tag), s_tag);
@@ -1151,8 +1296,8 @@ static esp_err_t mesh_v2_node_send_task_snapshot(uint32_t request_id)
 		p.request_id = request_id;
 		p.updated_ms = ms_now();
 		p.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-		p.cpu_valid = 0;
-		p.cpu_load_x10 = 0;
+		p.cpu_valid = cpu_valid ? 1 : 0;
+		p.cpu_load_x10 = cpu_load_x10;
 		p.slot_count = TASK_SLOT_COUNT;
 		p.task_total = (uint16_t)count;
 		p.task_index = (uint16_t)start;
@@ -1175,7 +1320,7 @@ static esp_err_t mesh_v2_node_send_task_snapshot(uint32_t request_id)
 			copy_tag(dst->name, sizeof(dst->name), name);
 			dst->priority = (uint32_t)src->uxCurrentPriority;
 			dst->free_words = (uint32_t)src->usStackHighWaterMark;
-			dst->cpu_x10 = -1;
+			dst->cpu_x10 = task_cpu_x10[start + i];
 		}
 
 		esp_err_t err = ESP_ERR_INVALID_STATE;

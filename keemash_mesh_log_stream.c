@@ -172,6 +172,8 @@ static esp_err_t send_nodeinfo_to_root(void)
 #if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	record_send_result(v2_err);
 	return v2_err;
+#else
+	(void)v2_err;
 #endif
 
 	mesh_nodeinfo_v2_packet_t p;
