@@ -1,4 +1,4 @@
-version: "0.5.7"
+version: "0.5.8"
 description: "KeeMASH reliable ESP-MESH protocol core"
 license: "Apache-2.0"
 dependencies:

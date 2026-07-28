@@ -37,6 +37,10 @@ static const char *TAG = "mesh_v2";
 #define MESH_V2_HELLO_RETRY_MS 5000
 #endif
 
+#ifndef MESH_V2_HELLO_HEARTBEAT_MS
+#define MESH_V2_HELLO_HEARTBEAT_MS 15000
+#endif
+
 #define TASK_SLOT_COUNT 25
 #define TASK_CPU_SAMPLE_PERIOD_MS 1000U
 
@@ -311,15 +315,28 @@ static void rel_poll_task(void *arg)
 			bool ready = keemash_rel_stats(s_rel, root, &stats) && stats.ready;
 			bool stale = ready && stats.ack_age_ms != UINT32_MAX &&
 			             stats.ack_age_ms >= MESH_V2_ACK_STALE_MS;
-			if ((!ready || stale) &&
-			    (s_rel_last_hello_ms == 0 ||
-			     (uint32_t)(now - s_rel_last_hello_ms) >= MESH_V2_HELLO_RETRY_MS)) {
-				(void)keemash_rel_send_hello(
+			uint32_t last_hello_ms;
+			portENTER_CRITICAL(&s_lock);
+			last_hello_ms = s_rel_last_hello_ms;
+			portEXIT_CRITICAL(&s_lock);
+			uint32_t hello_period_ms = (!ready || stale)
+				? MESH_V2_HELLO_RETRY_MS
+				: MESH_V2_HELLO_HEARTBEAT_MS;
+			if (last_hello_ms == 0 ||
+			    (uint32_t)(now - last_hello_ms) >= hello_period_ms) {
+				esp_err_t hello_err = keemash_rel_send_hello(
 					s_rel, root, s_tag,
 					(uint32_t)(esp_timer_get_time() / 1000000ULL),
 					node_capabilities());
-				s_rel_last_hello_ms = now;
-				if (s_hello_retry_count < UINT8_MAX) s_hello_retry_count++;
+				if (hello_err == ESP_OK) {
+					portENTER_CRITICAL(&s_lock);
+					s_rel_last_hello_ms = now;
+					if ((!ready || stale) &&
+					    s_hello_retry_count < UINT8_MAX) {
+						s_hello_retry_count++;
+					}
+					portEXIT_CRITICAL(&s_lock);
+				}
 			}
 			xSemaphoreGiveRecursive(s_rel_lock);
 		}
@@ -908,6 +925,11 @@ static esp_err_t send_hello(bool reset_session)
 			(uint32_t)(esp_timer_get_time() / 1000000ULL),
 			node_capabilities());
 		xSemaphoreGiveRecursive(s_rel_lock);
+		if (rel_err == ESP_OK) {
+			portENTER_CRITICAL(&s_lock);
+			s_rel_last_hello_ms = ms_now();
+			portEXIT_CRITICAL(&s_lock);
+		}
 #if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 		if (rel_err == ESP_OK) err = rel_err;
 #else
