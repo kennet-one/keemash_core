@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.6`.
+Latest stable release: `v0.5.7`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -62,6 +62,13 @@ unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
 
+`v0.5.7` makes lossless negotiation sticky for a confirmed root, moves log
+capture onto a fixed 32-entry worker queue, adds explicit capture-overflow
+diagnostics and provides a generic retrying event outbox. V1 NODEINFO and LOG
+remain available only before reliable negotiation, so an old root can discover
+the node without allowing a transient route or ACK outage to downgrade a
+negotiated peer.
+
 `v0.5.6` adds an optional `control_reserved_slots` TX-broker reserve and
 per-priority queue diagnostics. Existing initializers remain compatible because
 a zero reserve preserves the earlier behavior. Root firmware can reserve queue
@@ -95,10 +102,10 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.5.6` | Current root release; reserves TX capacity for CONTROL. |
+| `node0` | `v0.5.7` | Current root release with command delivery diagnostics. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
-| `humidifier` | `v0.5.5` | Current validated node consumer. |
+| `humidifier` | `v0.5.7` | Current hardened node consumer. |
 | Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults

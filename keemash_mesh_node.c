@@ -75,6 +75,8 @@ static uint32_t s_session_id = 0;
 static uint32_t s_next_seq = 1;
 static bool s_inited = false;
 static bool s_root_ready = false;
+static bool s_lossless_negotiated = false;
+static bool s_mesh_route_up = false;
 static uint32_t s_last_ack_ms = 0;
 static uint32_t s_last_hello_ms = 0;
 static uint8_t s_parent_mac[6] = {0};
@@ -94,6 +96,7 @@ static keemash_rel_ctx_t *s_rel = NULL;
 static SemaphoreHandle_t s_rel_lock = NULL;
 static TaskHandle_t s_rel_task = NULL;
 static uint32_t s_rel_last_hello_ms = 0;
+static uint8_t s_hello_retry_count = 0;
 static SemaphoreHandle_t s_task_cpu_lock = NULL;
 static uint32_t s_task_cpu_last_sample_ms = 0;
 
@@ -316,6 +319,7 @@ static void rel_poll_task(void *arg)
 					(uint32_t)(esp_timer_get_time() / 1000000ULL),
 					node_capabilities());
 				s_rel_last_hello_ms = now;
+				if (s_hello_retry_count < UINT8_MAX) s_hello_retry_count++;
 			}
 			xSemaphoreGiveRecursive(s_rel_lock);
 		}
@@ -975,6 +979,9 @@ void mesh_v2_node_init(const char *tag)
 
 void mesh_v2_node_on_mesh_connected(void)
 {
+	portENTER_CRITICAL(&s_lock);
+	s_mesh_route_up = true;
+	portEXIT_CRITICAL(&s_lock);
 	if (s_rel && s_rel_lock &&
 	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(500)) == pdTRUE) {
 		const uint8_t root[6] = {0};
@@ -993,8 +1000,8 @@ void mesh_v2_node_on_mesh_disconnected(void)
 {
 	portENTER_CRITICAL(&s_lock);
 	s_root_ready = false;
+	s_mesh_route_up = false;
 	s_last_ack_ms = 0;
-	memset(s_root_origin_mac, 0, sizeof(s_root_origin_mac));
 	portEXIT_CRITICAL(&s_lock);
 	if (s_rel && s_rel_lock &&
 	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -1010,6 +1017,16 @@ void mesh_v2_node_set_root_mac(const uint8_t root_mac[6])
 	if (root_mac) mac_copy(s_root_origin_mac, root_mac);
 	else memset(s_root_origin_mac, 0, sizeof(s_root_origin_mac));
 	portEXIT_CRITICAL(&s_lock);
+}
+
+void mesh_v2_node_forget_root(void)
+{
+	portENTER_CRITICAL(&s_lock);
+	memset(s_root_origin_mac, 0, sizeof(s_root_origin_mac));
+	s_lossless_negotiated = false;
+	s_hello_retry_count = 0;
+	portEXIT_CRITICAL(&s_lock);
+	command_cache_clear();
 }
 
 bool mesh_v2_node_get_root_mac(uint8_t root_mac[6])
@@ -1067,6 +1084,40 @@ bool mesh_v2_node_ready(void)
 	ready = s_root_ready;
 	portEXIT_CRITICAL(&s_lock);
 	return ready || mesh_v2_node_reliable_ready();
+}
+
+bool mesh_v2_node_lossless_negotiated(void)
+{
+	bool negotiated;
+	portENTER_CRITICAL(&s_lock);
+	negotiated = s_lossless_negotiated;
+	portEXIT_CRITICAL(&s_lock);
+	return negotiated;
+}
+
+keemash_mesh_root_health_t mesh_v2_node_root_health(void)
+{
+	bool route_up;
+	bool negotiated;
+	portENTER_CRITICAL(&s_lock);
+	route_up = s_mesh_route_up;
+	negotiated = s_lossless_negotiated;
+	portEXIT_CRITICAL(&s_lock);
+	if (!route_up) return KEEMASH_MESH_ROOT_DISCONNECTED;
+	if (mesh_v2_node_ack_fresh(MESH_V2_ACK_STALE_MS)) {
+		return KEEMASH_MESH_ROOT_HEALTHY;
+	}
+	return negotiated ? KEEMASH_MESH_ROOT_RECOVERING
+			  : KEEMASH_MESH_ROOT_NEGOTIATING;
+}
+
+bool mesh_v2_node_protocol_recovery_exhausted(void)
+{
+	bool exhausted;
+	portENTER_CRITICAL(&s_lock);
+	exhausted = s_mesh_route_up && s_hello_retry_count >= 6;
+	portEXIT_CRITICAL(&s_lock);
+	return exhausted && !mesh_v2_node_ack_fresh(MESH_V2_ACK_STALE_MS);
 }
 
 uint32_t mesh_v2_node_ack_age_ms(void)
@@ -1679,6 +1730,10 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 			if (rel_err == ESP_OK &&
 			    probe->type == MESH_V2_TYPE_RELIABLE_HELLO_ACK) {
 				if (mac_is_zero(expected_root)) mesh_v2_node_set_root_mac(from);
+				portENTER_CRITICAL(&s_lock);
+				s_lossless_negotiated = true;
+				s_hello_retry_count = 0;
+				portEXIT_CRITICAL(&s_lock);
 				const mesh_v2_reliable_hello_ack_payload_t *ack =
 					(const mesh_v2_reliable_hello_ack_payload_t *)
 					((const uint8_t *)pkt_buf + sizeof(*probe));

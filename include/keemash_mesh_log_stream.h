@@ -11,6 +11,14 @@
 extern "C" {
 #endif
 
+typedef struct {
+	uint32_t captured;
+	uint32_t delivered;
+	uint32_t capture_overflow;
+	uint32_t pending;
+	uint32_t high_watermark;
+} keemash_mesh_log_stream_stats_t;
+
 // Call once during startup, after log_time_vprintf_start().
 esp_err_t keemash_mesh_log_stream_init(const char *tag);
 
@@ -30,6 +38,7 @@ uint32_t keemash_mesh_log_stream_tx_accepted_age_ms(void);
 bool keemash_mesh_log_stream_tx_accepted_fresh(uint32_t max_age_ms);
 void keemash_mesh_log_stream_clear_tx_accepted(void);
 bool keemash_mesh_log_stream_enabled(void);
+void keemash_mesh_log_stream_stats(keemash_mesh_log_stream_stats_t *out);
 
 // Call from mesh_rx_task() when MESH_LOG_TYPE_CTRL is received.
 esp_err_t keemash_mesh_log_stream_handle_v1_ctrl(const void *pkt_buf, size_t pkt_len);

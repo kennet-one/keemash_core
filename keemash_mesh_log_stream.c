@@ -4,7 +4,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -14,6 +13,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 
 #include "sdkconfig.h"
@@ -31,7 +31,6 @@ static vprintf_like_t	s_prev_vprintf = NULL;
 static bool		s_inited = false;
 static bool		s_stream_enabled = false;
 static bool		s_mesh_connected = false;
-static bool		s_in_hook = false;
 static portMUX_TYPE	s_state_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static char		s_tag[16] = "node";
@@ -39,15 +38,19 @@ static char		s_tag[16] = "node";
 static uint32_t		s_cnt = 0;
 static TaskHandle_t	s_nodeinfo_task = NULL;
 static TaskHandle_t	s_nodeinfo_burst_task = NULL;
+static TaskHandle_t	s_log_worker_task = NULL;
+static QueueHandle_t	s_log_queue = NULL;
 static esp_err_t	s_last_send_err = ESP_OK;
 static uint32_t		s_last_tx_ok_ms = 0;
+static keemash_mesh_log_stream_stats_t s_log_stats;
+static uint32_t		s_reported_overflow = 0;
 
-#ifndef LOG_STREAM_STACK_TMP
-	#define LOG_STREAM_STACK_TMP	128
+#ifndef CONFIG_KEEMASH_LOG_CAPTURE_QUEUE_LEN
+	#define CONFIG_KEEMASH_LOG_CAPTURE_QUEUE_LEN 32
 #endif
 
-#ifndef LOG_STREAM_HEAP_MAX
-	#define LOG_STREAM_HEAP_MAX	256
+#ifndef CONFIG_KEEMASH_LOG_CAPTURE_LINE_MAX
+	#define CONFIG_KEEMASH_LOG_CAPTURE_LINE_MAX 256
 #endif
 
 #ifndef CONFIG_KEEMASH_NODEINFO_PERIOD_MS
@@ -81,24 +84,9 @@ static bool mesh_connected_snapshot(void)
 	return connected;
 }
 
-static bool enter_log_hook(void)
-{
-	bool entered = false;
-	portENTER_CRITICAL(&s_state_lock);
-	if (!s_in_hook) {
-		s_in_hook = true;
-		entered = true;
-	}
-	portEXIT_CRITICAL(&s_state_lock);
-	return entered;
-}
-
-static void leave_log_hook(void)
-{
-	portENTER_CRITICAL(&s_state_lock);
-	s_in_hook = false;
-	portEXIT_CRITICAL(&s_state_lock);
-}
+typedef struct {
+	char line[CONFIG_KEEMASH_LOG_CAPTURE_LINE_MAX];
+} log_capture_item_t;
 
 static void build_time_prefix(char *out, size_t out_sz)
 {
@@ -169,11 +157,17 @@ static esp_err_t send_nodeinfo_to_root(void)
 	}
 
 	esp_err_t v2_err = mesh_v2_node_send_nodeinfo();
-#if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
+	if (v2_err == ESP_OK) {
+		record_send_result(ESP_OK);
+		return ESP_OK;
+	}
+	if (mesh_v2_node_lossless_negotiated()) {
+		record_send_result(v2_err);
+		return v2_err;
+	}
+#if !CONFIG_KEEMASH_V1_PRENEGOTIATION_ENABLE
 	record_send_result(v2_err);
 	return v2_err;
-#else
-	(void)v2_err;
 #endif
 
 	mesh_nodeinfo_v2_packet_t p;
@@ -197,19 +191,27 @@ static esp_err_t send_nodeinfo_to_root(void)
 	return err;
 }
 
-static void send_logline_to_root(const char *line)
+static esp_err_t send_logline_to_root(const char *line)
 {
-	if (!line) return;
-	if (!mesh_connected_snapshot()) return;
+	if (!line) return ESP_ERR_INVALID_ARG;
+	if (!mesh_connected_snapshot()) {
+		record_send_result(ESP_ERR_INVALID_STATE);
+		return ESP_ERR_INVALID_STATE;
+	}
 
 #if CONFIG_KEEMASH_NODE_V2_LOG_ENABLE
 	esp_err_t v2_err = mesh_v2_node_send_log_line(line);
 	if (v2_err == ESP_OK) {
-		return;
+		record_send_result(ESP_OK);
+		return ESP_OK;
 	}
-#if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
+	if (mesh_v2_node_lossless_negotiated()) {
+		record_send_result(v2_err);
+		return v2_err;
+	}
+#if !CONFIG_KEEMASH_V1_PRENEGOTIATION_ENABLE
 	record_send_result(v2_err);
-	return;
+	return v2_err;
 #endif
 #else
 	mesh_v2_node_kick_root();
@@ -232,7 +234,75 @@ static void send_logline_to_root(const char *line)
 	p.line[sizeof(p.line) - 1] = '\0';
 
 	const uint8_t root[6] = {0};
-	record_send_result(keemash_mesh_transport_send(root, &p, sizeof(p)));
+	esp_err_t err = keemash_mesh_transport_send(root, &p, sizeof(p));
+	record_send_result(err);
+	return err;
+}
+
+static void log_worker_task(void *arg)
+{
+	(void)arg;
+	log_capture_item_t item;
+
+	for (;;) {
+		if (xQueueReceive(s_log_queue, &item, portMAX_DELAY) != pdTRUE) continue;
+		esp_err_t err;
+		do {
+			err = send_logline_to_root(item.line);
+			if (err != ESP_OK) vTaskDelay(pdMS_TO_TICKS(250));
+		} while (err != ESP_OK);
+
+		uint32_t overflow;
+		uint32_t pending = uxQueueMessagesWaiting(s_log_queue);
+		portENTER_CRITICAL(&s_state_lock);
+		s_log_stats.delivered++;
+		s_log_stats.pending = pending;
+		overflow = s_log_stats.capture_overflow;
+		portEXIT_CRITICAL(&s_state_lock);
+
+		if (overflow != s_reported_overflow) {
+			char tprefix[40];
+			char summary[CONFIG_KEEMASH_LOG_CAPTURE_LINE_MAX];
+			build_time_prefix(tprefix, sizeof(tprefix));
+			snprintf(summary, sizeof(summary),
+			         "%sW (0) mesh_log: capture queue dropped %lu lines",
+			         tprefix, (unsigned long)(overflow - s_reported_overflow));
+			if (send_logline_to_root(summary) == ESP_OK) {
+				s_reported_overflow = overflow;
+			}
+		}
+	}
+}
+
+static void capture_log_line(const char *fmt, va_list ap)
+{
+	if (!s_log_queue || !fmt) return;
+
+	log_capture_item_t item = {0};
+	char tprefix[40];
+	build_time_prefix(tprefix, sizeof(tprefix));
+	size_t prefix_len = strnlen(tprefix, sizeof(tprefix));
+	if (prefix_len >= sizeof(item.line)) prefix_len = sizeof(item.line) - 1;
+	memcpy(item.line, tprefix, prefix_len);
+
+	va_list copy;
+	va_copy(copy, ap);
+	(void)vsnprintf(item.line + prefix_len, sizeof(item.line) - prefix_len, fmt, copy);
+	va_end(copy);
+
+	if (xQueueSend(s_log_queue, &item, 0) == pdTRUE) {
+		uint32_t pending = uxQueueMessagesWaiting(s_log_queue);
+		portENTER_CRITICAL(&s_state_lock);
+		s_log_stats.captured++;
+		s_log_stats.pending = pending;
+		if (pending > s_log_stats.high_watermark) s_log_stats.high_watermark = pending;
+		portEXIT_CRITICAL(&s_state_lock);
+		return;
+	}
+
+	portENTER_CRITICAL(&s_state_lock);
+	s_log_stats.capture_overflow++;
+	portEXIT_CRITICAL(&s_state_lock);
 }
 
 static void send_stream_status_to_root(bool enabled)
@@ -245,7 +315,7 @@ static void send_stream_status_to_root(bool enabled)
 	         "%sI (0) mesh_log: remote log stream %s",
 	         tprefix,
 	         enabled ? "ready" : "disabled");
-	send_logline_to_root(line);
+	(void)send_logline_to_root(line);
 }
 
 static void nodeinfo_heartbeat_task(void *arg)
@@ -286,67 +356,12 @@ static int mesh_log_vprintf(const char *fmt, va_list ap)
 		va_end(ap_copy);
 	}
 
-	// 2) Stop here when remote streaming is disabled.
-	if (!stream_enabled_snapshot()) return ret;
+	// The worker can produce transport diagnostics. Keep those on UART without
+	// feeding them back into its own capture queue.
+	if (!stream_enabled_snapshot() ||
+	    xTaskGetCurrentTaskHandle() == s_log_worker_task) return ret;
 
-	// 3) Recursion guard.
-	if (!enter_log_hook()) return ret;
-
-	char tprefix[40];
-	build_time_prefix(tprefix, sizeof(tprefix));
-
-	char stack_buf[LOG_STREAM_STACK_TMP];
-	size_t cap = sizeof(stack_buf);
-
-	// prefix
-	size_t tlen = strnlen(tprefix, sizeof(tprefix));
-	size_t copy_t = (tlen < (cap - 1)) ? tlen : (cap - 1);
-	memcpy(stack_buf, tprefix, copy_t);
-	stack_buf[copy_t] = '\0';
-
-	// message
-	va_list ap_copy2;
-	va_copy(ap_copy2, ap);
-	int w = vsnprintf(stack_buf + copy_t, cap - copy_t, fmt, ap_copy2);
-	va_end(ap_copy2);
-
-	if (w < 0) {
-		send_logline_to_root(stack_buf);
-		leave_log_hook();
-		return ret;
-	}
-
-	if ((size_t)w < (cap - copy_t)) {
-		send_logline_to_root(stack_buf);
-		leave_log_hook();
-		return ret;
-	}
-
-	// Truncated heap fallback.
-	size_t need = copy_t + (size_t)w + 1;
-	if (need > LOG_STREAM_HEAP_MAX) need = LOG_STREAM_HEAP_MAX;
-
-	char *heap_buf = (char *)malloc(need);
-	if (!heap_buf) {
-		stack_buf[cap - 2] = '\n';
-		stack_buf[cap - 1] = '\0';
-		send_logline_to_root(stack_buf);
-		leave_log_hook();
-		return ret;
-	}
-
-	memcpy(heap_buf, tprefix, copy_t);
-	heap_buf[copy_t] = '\0';
-
-	va_list ap_copy3;
-	va_copy(ap_copy3, ap);
-	vsnprintf(heap_buf + copy_t, need - copy_t, fmt, ap_copy3);
-	va_end(ap_copy3);
-
-	send_logline_to_root(heap_buf);
-	free(heap_buf);
-
-	leave_log_hook();
+	capture_log_line(fmt, ap);
 	return ret;
 }
 
@@ -362,6 +377,18 @@ esp_err_t keemash_mesh_log_stream_init(const char *tag)
 	if (!s_nodeinfo_task) {
 		if (xTaskCreate(nodeinfo_heartbeat_task, "nodeinfo_hb", 4096, NULL, 4,
 		                &s_nodeinfo_task) != pdPASS) return ESP_ERR_NO_MEM;
+	}
+	if (!s_log_queue) {
+		s_log_queue = xQueueCreate(CONFIG_KEEMASH_LOG_CAPTURE_QUEUE_LEN,
+		                           sizeof(log_capture_item_t));
+		if (!s_log_queue) return ESP_ERR_NO_MEM;
+	}
+	if (!s_log_worker_task &&
+	    xTaskCreate(log_worker_task, "mesh_log_tx", 4096, NULL, 4,
+	                &s_log_worker_task) != pdPASS) {
+		vQueueDelete(s_log_queue);
+		s_log_queue = NULL;
+		return ESP_ERR_NO_MEM;
 	}
 	s_prev_vprintf = (vprintf_like_t)esp_log_set_vprintf(&mesh_log_vprintf);
 	s_inited = true;
@@ -458,6 +485,14 @@ void keemash_mesh_log_stream_clear_tx_accepted(void)
 bool keemash_mesh_log_stream_enabled(void)
 {
 	return stream_enabled_snapshot();
+}
+
+void keemash_mesh_log_stream_stats(keemash_mesh_log_stream_stats_t *out)
+{
+	if (!out) return;
+	portENTER_CRITICAL(&s_state_lock);
+	*out = s_log_stats;
+	portEXIT_CRITICAL(&s_state_lock);
 }
 
 esp_err_t keemash_mesh_log_stream_handle_v1_ctrl(const void *pkt_buf, size_t pkt_len)

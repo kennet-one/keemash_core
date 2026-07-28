@@ -20,6 +20,9 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 // Pass NULL after a route/root change so HELLO_ACK can bind the new origin.
 void mesh_v2_node_set_root_mac(const uint8_t root_mac[6]);
 bool mesh_v2_node_get_root_mac(uint8_t root_mac[6]);
+// Explicitly forget a confirmed old root identity and allow V1 negotiation
+// again. Ordinary route loss and parent switches must not call this.
+void mesh_v2_node_forget_root(void);
 void mesh_v2_node_set_relay_eligible(bool eligible);
 void mesh_v2_node_update_topology(const uint8_t parent_mac[6],
                                   const uint8_t root_mac[6],
@@ -48,6 +51,16 @@ typedef struct {
 void mesh_v2_node_update_diagnostics(const mesh_v2_node_diag_t *diag);
 
 bool mesh_v2_node_ready(void);
+typedef enum {
+	KEEMASH_MESH_ROOT_DISCONNECTED = 0,
+	KEEMASH_MESH_ROOT_NEGOTIATING = 1,
+	KEEMASH_MESH_ROOT_HEALTHY = 2,
+	KEEMASH_MESH_ROOT_RECOVERING = 3,
+} keemash_mesh_root_health_t;
+
+bool mesh_v2_node_lossless_negotiated(void);
+keemash_mesh_root_health_t mesh_v2_node_root_health(void);
+bool mesh_v2_node_protocol_recovery_exhausted(void);
 bool mesh_v2_node_ack_fresh(uint32_t max_age_ms);
 uint32_t mesh_v2_node_ack_age_ms(void);
 void mesh_v2_node_kick_root(void);
