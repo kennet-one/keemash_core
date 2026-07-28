@@ -41,6 +41,8 @@ static const char *TAG = "mesh_v2";
 #define MESH_V2_HELLO_HEARTBEAT_MS 15000
 #endif
 
+#define MESH_V2_SESSION_RESYNC_THROTTLE_MS 1000U
+
 #define TASK_SLOT_COUNT 25
 #define TASK_CPU_SAMPLE_PERIOD_MS 1000U
 
@@ -1749,6 +1751,19 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 			esp_err_t rel_err = keemash_rel_handle_rx(s_rel, from,
 			                                          pkt_buf, pkt_len);
 			xSemaphoreGiveRecursive(s_rel_lock);
+			if (rel_err == ESP_ERR_INVALID_STATE &&
+			    probe->type != MESH_V2_TYPE_RELIABLE_HELLO) {
+				uint32_t now = ms_now();
+				bool resync_due;
+				portENTER_CRITICAL(&s_lock);
+				resync_due = s_rel_last_hello_ms == 0 ||
+					     (uint32_t)(now - s_rel_last_hello_ms) >=
+						     MESH_V2_SESSION_RESYNC_THROTTLE_MS;
+				portEXIT_CRITICAL(&s_lock);
+				if (resync_due) {
+					(void)send_hello(false);
+				}
+			}
 			if (rel_err == ESP_OK &&
 			    probe->type == MESH_V2_TYPE_RELIABLE_HELLO_ACK) {
 				if (mac_is_zero(expected_root)) mesh_v2_node_set_root_mac(from);

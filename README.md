@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.8`.
+Latest stable release: `v0.5.9`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -61,6 +61,12 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.5.9` immediately starts a throttled HELLO renegotiation when a node
+receives a reliable packet from its authenticated root with an incompatible
+session. This lets the first TIME, CONTROL or telemetry request after a root
+reboot confirm the new root session instead of waiting for a heartbeat or stale
+ACK timeout.
 
 `v0.5.8` adds a lightweight reliable HELLO heartbeat. A node now confirms the
 root boot session every 15 seconds even while ordinary traffic is quiet, so a
