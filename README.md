@@ -115,10 +115,10 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.5.7` | Current root release with command delivery diagnostics. |
+| `node0` | `v0.5.9` | Current root release with command and root-session recovery diagnostics. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
-| `humidifier` | `v0.5.7` | Current hardened node consumer. |
+| `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |
 | Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults
