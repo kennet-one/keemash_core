@@ -47,6 +47,7 @@ esp_err_t app_mesh_runtime_init(const char *tag, bool relay_eligible)
 {
 	keemash_mesh_tx_broker_config_t config = {
 		.slots = 24,
+		.control_reserved_slots = 4,
 		.max_packet_size = 512,
 		.task_stack_words = 4096,
 		.task_priority = 7,

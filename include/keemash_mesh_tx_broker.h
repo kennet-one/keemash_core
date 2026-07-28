@@ -20,6 +20,7 @@ typedef esp_err_t (*keemash_mesh_tx_raw_send_fn)(void *user,
 
 typedef struct {
 	uint16_t slots;
+	uint16_t control_reserved_slots;
 	uint16_t max_packet_size;
 	uint16_t task_stack_words;
 	uint8_t task_priority;
@@ -32,9 +33,13 @@ typedef struct {
 	uint32_t accepted;
 	uint32_t completed;
 	uint32_t rejected_full;
+	uint32_t rejected_reserved;
 	uint32_t rejected_size;
 	uint32_t transport_errors;
 	uint32_t pending;
+	uint32_t high_watermark;
+	uint32_t accepted_by_priority[4];
+	uint32_t rejected_by_priority[4];
 	int32_t last_transport_err;
 } keemash_mesh_tx_broker_stats_t;
 

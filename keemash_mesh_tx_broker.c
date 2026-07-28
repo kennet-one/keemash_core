@@ -32,6 +32,14 @@ struct keemash_mesh_tx_broker {
 	keemash_mesh_tx_broker_stats_t stats;
 };
 
+static uint8_t stats_priority_index(uint8_t priority)
+{
+	if (priority >= KEEMASH_REL_PRIORITY_CONTROL) return 3;
+	if (priority >= KEEMASH_REL_PRIORITY_HIGH) return 2;
+	if (priority >= KEEMASH_REL_PRIORITY_NORMAL) return 1;
+	return 0;
+}
+
 static broker_slot_t *pick_next_locked(keemash_mesh_tx_broker_t *broker)
 {
 	broker_slot_t *best = NULL;
@@ -81,7 +89,10 @@ esp_err_t keemash_mesh_tx_broker_init(keemash_mesh_tx_broker_t **out,
 					       const keemash_mesh_tx_broker_config_t *config)
 {
 	if (!out || !config || !config->raw_send || config->slots == 0 ||
-	    config->max_packet_size == 0) return ESP_ERR_INVALID_ARG;
+	    config->max_packet_size == 0 ||
+	    config->control_reserved_slots >= config->slots) {
+		return ESP_ERR_INVALID_ARG;
+	}
 	keemash_mesh_tx_broker_t *broker = calloc(1, sizeof(*broker));
 	if (!broker) return ESP_ERR_NO_MEM;
 	broker->cfg = *config;
@@ -139,11 +150,23 @@ esp_err_t keemash_mesh_tx_broker_submit(keemash_mesh_tx_broker_t *broker,
 	}
 	if (xSemaphoreTake(broker->lock, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
 	broker_slot_t *slot = NULL;
+	uint16_t free_slots = 0;
 	for (uint16_t i = 0; i < broker->cfg.slots; i++) {
-		if (!broker->slots[i].used) { slot = &broker->slots[i]; break; }
+		if (!broker->slots[i].used) {
+			free_slots++;
+			if (!slot) slot = &broker->slots[i];
+		}
 	}
 	if (!slot) {
 		broker->stats.rejected_full++;
+		broker->stats.rejected_by_priority[stats_priority_index(priority)]++;
+		xSemaphoreGive(broker->lock);
+		return ESP_ERR_NO_MEM;
+	}
+	if (priority < KEEMASH_REL_PRIORITY_CONTROL &&
+	    free_slots <= broker->cfg.control_reserved_slots) {
+		broker->stats.rejected_reserved++;
+		broker->stats.rejected_by_priority[stats_priority_index(priority)]++;
 		xSemaphoreGive(broker->lock);
 		return ESP_ERR_NO_MEM;
 	}
@@ -157,7 +180,11 @@ esp_err_t keemash_mesh_tx_broker_submit(keemash_mesh_tx_broker_t *broker,
 	memcpy(slot->bytes, packet, packet_len);
 	slot->len = packet_len;
 	broker->stats.accepted++;
+	broker->stats.accepted_by_priority[stats_priority_index(priority)]++;
 	broker->stats.pending++;
+	if (broker->stats.pending > broker->stats.high_watermark) {
+		broker->stats.high_watermark = broker->stats.pending;
+	}
 	TaskHandle_t task = broker->task;
 	xSemaphoreGive(broker->lock);
 	if (task) xTaskNotifyGive(task);

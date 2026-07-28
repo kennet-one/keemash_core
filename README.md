@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.5`.
+Latest stable release: `v0.5.6`.
 API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
 
 License: `Apache-2.0`.
@@ -62,6 +62,12 @@ unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
 
+`v0.5.6` adds an optional `control_reserved_slots` TX-broker reserve and
+per-priority queue diagnostics. Existing initializers remain compatible because
+a zero reserve preserves the earlier behavior. Root firmware can reserve queue
+capacity so log or telemetry traffic cannot consume every slot needed by
+CONTROL packets.
+
 `v0.5.5` restores typed TASK CPU telemetry. The node facade keeps a one-second
 runtime-counter baseline and computes total and per-task CPU deltas immediately
 when the root requests a snapshot. It adds no wire delay and keeps the existing
@@ -89,7 +95,7 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.5.5` | Current root release; requests TASK snapshots at low latency. |
+| `node0` | `v0.5.6` | Current root release; reserves TX capacity for CONTROL. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
 | `humidifier` | `v0.5.5` | Current validated node consumer. |
