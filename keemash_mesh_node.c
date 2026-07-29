@@ -1772,11 +1772,15 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 				return ESP_ERR_TIMEOUT;
 			}
 			uint32_t previous_root_session = 0;
+			bool was_negotiated = false;
 			const uint8_t root[6] = {0};
 			keemash_rel_stats_t before = {0};
 			if (keemash_rel_stats(s_rel, root, &before)) {
 				previous_root_session = before.root_session_id;
 			}
+			portENTER_CRITICAL(&s_lock);
+			was_negotiated = s_lossless_negotiated;
+			portEXIT_CRITICAL(&s_lock);
 			esp_err_t rel_err = keemash_rel_handle_rx(s_rel, from,
 			                                          pkt_buf, pkt_len);
 			xSemaphoreGiveRecursive(s_rel_lock);
@@ -1803,15 +1807,18 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 				const mesh_v2_reliable_hello_ack_payload_t *ack =
 					(const mesh_v2_reliable_hello_ack_payload_t *)
 					((const uint8_t *)pkt_buf + sizeof(*probe));
+				bool root_session_changed =
+					previous_root_session != 0 &&
+					previous_root_session != ack->root_session_id;
 				if (probe->payload_len >= sizeof(*ack) &&
-				    (ack->reset_link ||
-				     (previous_root_session != 0 &&
-				      previous_root_session != ack->root_session_id))) {
+				    root_session_changed) {
 					command_cache_clear();
 				}
-				(void)mesh_v2_node_send_nodeinfo();
-				(void)mesh_v2_node_send_topology();
-				(void)mesh_v2_node_send_memory();
+				if (!was_negotiated || root_session_changed) {
+					(void)mesh_v2_node_send_nodeinfo();
+					(void)mesh_v2_node_send_topology();
+					(void)mesh_v2_node_send_memory();
+				}
 			}
 			return rel_err;
 		}

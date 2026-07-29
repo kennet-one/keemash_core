@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.6.0`.
-API compatibility level: `0.6.0` (`KEEMASH_MESH_CORE_VERSION == 0x00060000UL`).
+Latest stable release: `v0.6.1`.
+API compatibility level: `0.6.1` (`KEEMASH_MESH_CORE_VERSION == 0x00060100UL`).
 
 License: `Apache-2.0`.
 
@@ -50,8 +50,8 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00060000UL
-#error "firmware requires keemash_mesh_core 0.6.0"
+#if KEEMASH_MESH_CORE_VERSION != 0x00060100UL
+#error "firmware requires keemash_mesh_core 0.6.1"
 #endif
 ```
 

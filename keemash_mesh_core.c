@@ -1133,8 +1133,21 @@ static esp_err_t handle_hello_ack(keemash_rel_ctx_t *ctx, const uint8_t from[6],
 	}
 	peer_state_t *peer = peer_find(ctx, from, true);
 	if (!peer) return ESP_ERR_NO_MEM;
-	if (ack->reset_link ||
-	    (peer->root_session_id && peer->root_session_id != ack->root_session_id)) {
+	bool same_binding = peer->ready &&
+			    peer->root_session_id == ack->root_session_id &&
+			    peer->node_session_id == ack->node_session_id;
+	bool session_changed =
+		(peer->root_session_id &&
+		 peer->root_session_id != ack->root_session_id) ||
+		(peer->node_session_id &&
+		 peer->node_session_id != ack->node_session_id);
+	/*
+	 * HELLO_ACK may be duplicated by the transport or by a HELLO retry. A
+	 * repeated reset_link for the binding already installed is idempotent;
+	 * clearing it again would discard frames queued immediately after the
+	 * first ACK and report false SESSION_RESET losses.
+	 */
+	if (session_changed || (ack->reset_link && !same_binding)) {
 		clear_peer_buffers(ctx, peer, MESH_V2_LOST_REASON_SESSION_RESET);
 	}
 	peer->root_session_id = ack->root_session_id;
@@ -1971,6 +1984,47 @@ static bool debug_case_session_reset(keemash_rel_debug_result_t *out)
 	if (debug_make_pair(&root_ep, &node_ep) != ESP_OK) return false;
 	static const uint8_t root_peer[6] = {0};
 	if (debug_handshake(&root_ep, &node_ep)) {
+		/*
+		 * A duplicate initial HELLO_ACK with reset_link set must not clear
+		 * application data queued after the first ACK.
+		 */
+		root_ep.ctx->cfg.fault_drop_ack_every = 1;
+		bool duplicate_ack_queued = debug_send_payload(node_ep.ctx, root_peer,
+			MESH_V2_TUNNEL_CHANNEL_NODEINFO,
+			KEEMASH_REL_PRIORITY_NORMAL, 0xD001);
+		keemash_rel_stats_t node_before_duplicate = {0};
+		bool duplicate_ack_before_ok =
+			keemash_rel_stats(node_ep.ctx, root_ep.mac,
+					  &node_before_duplicate) &&
+			node_before_duplicate.tx_unacked == 1 &&
+			node_before_duplicate.lost_count == 0;
+		mesh_v2_reliable_hello_ack_payload_t duplicate_ack = {
+			.profile_version = MESH_V2_RELIABLE_PROFILE_VERSION,
+			.mtu = MESH_V2_PACKET_MAX,
+			.capabilities = MESH_V2_CAP_RELIABLE_E2E |
+					MESH_V2_CAP_SACK |
+					MESH_V2_CAP_FRAGMENT,
+			.root_session_id =
+				keemash_rel_local_session(root_ep.ctx),
+			.node_session_id =
+				keemash_rel_local_session(node_ep.ctx),
+			.reset_link = 1,
+		};
+		bool duplicate_ack_handled =
+			handle_hello_ack(node_ep.ctx, root_ep.mac,
+					 &duplicate_ack) == ESP_OK;
+		keemash_rel_stats_t node_after_duplicate = {0};
+		bool duplicate_ack_kept_state =
+			keemash_rel_stats(node_ep.ctx, root_ep.mac,
+					  &node_after_duplicate) &&
+			node_after_duplicate.tx_unacked == 1 &&
+			node_after_duplicate.lost_count == 0;
+		root_ep.ctx->cfg.fault_drop_ack_every = 0;
+		bool duplicate_ack_pass = duplicate_ack_queued &&
+			duplicate_ack_before_ok && duplicate_ack_handled &&
+			duplicate_ack_kept_state &&
+			debug_pump_pair(&root_ep, &node_ep, out, 16, true);
+
 		uint32_t old_root_session = keemash_rel_local_session(root_ep.ctx);
 		node_ep.ctx->cfg.fault_drop_ack_every = 1;
 		bool root_had_unacked = debug_send_payload(root_ep.ctx, node_ep.mac,
@@ -2007,7 +2061,8 @@ static bool debug_case_session_reset(keemash_rel_debug_result_t *out)
 		keemash_rel_stats_t node_st = {0};
 		bool stats_ok = keemash_rel_stats(root_ep.ctx, node_ep.mac, &root_st) &&
 				keemash_rel_stats(node_ep.ctx, root_ep.mac, &node_st);
-		pass = root_reset_pass && node_reset_pass && stats_ok &&
+		pass = duplicate_ack_pass &&
+		       root_reset_pass && node_reset_pass && stats_ok &&
 		       root_st.lost_reason == MESH_V2_LOST_REASON_SESSION_RESET &&
 		       node_st.lost_reason == MESH_V2_LOST_REASON_SESSION_RESET &&
 		       root_st.lost_count > 0 && node_st.lost_count > 0 &&
