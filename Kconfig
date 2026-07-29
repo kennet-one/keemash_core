@@ -92,6 +92,15 @@ menu "KeeMASH Reliable Mesh"
             not active but the board definition wants to advertise possible
             PSRAM capacity. Leave 0 when unknown.
 
+    config KEEMASH_NODE_TASK_SLOTS
+        int "Maximum tasks in a typed TASK snapshot"
+        range 16 64
+        default 48
+        help
+            FreeRTOS returns no task snapshot when the supplied status array
+            is smaller than the current task count. Keep enough headroom for
+            sensor-rich nodes while bounding static RAM usage.
+
     config KEEMASH_NODE_V2_LOG_ENABLE
         bool "Use reliable V2 for node log streaming"
         default y
