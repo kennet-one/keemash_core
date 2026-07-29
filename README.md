@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.5.9`.
-API compatibility level: `0.5.0` (`KEEMASH_MESH_CORE_VERSION == 0x00050000UL`).
+Latest stable release: `v0.6.0`.
+API compatibility level: `0.6.0` (`KEEMASH_MESH_CORE_VERSION == 0x00060000UL`).
 
 License: `Apache-2.0`.
 
@@ -47,20 +47,24 @@ node-specific recovery policy, command adapter and hardware modules. Firmware pr
 strong hook implementations declared in `keemash_mesh_hooks.h`.
 
 Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
-as the compile-time API compatibility level. Release `v0.5.1` keeps the `0.5.0`
-API level because it does not change the node-side API or wire protocol:
+as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00050000UL
-#error "firmware requires keemash_mesh_core 0.5.0"
+#if KEEMASH_MESH_CORE_VERSION != 0x00060000UL
+#error "firmware requires keemash_mesh_core 0.6.0"
 #endif
 ```
 
-Use a fixed tag such as `v0.5.1` when integrating the component into node
+Use a fixed tag such as `v0.6.0` when integrating the component into node
 firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.6.0` adds reliable typed SENSOR snapshots, explicit sensor capability
+negotiation, five initial metric identifiers and strict payload validation.
+Periodic telemetry, legacy command replies and automation updates use flags in
+one common snapshot format without changing existing channels.
 
 `v0.5.9` immediately starts a throttled HELLO renegotiation when a node
 receives a reliable packet from its authenticated root with an incompatible

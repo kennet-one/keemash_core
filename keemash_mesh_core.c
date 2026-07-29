@@ -2375,3 +2375,22 @@ esp_err_t keemash_rel_debug_run_selftest(uint32_t case_mask,
 		 (unsigned long)out->cases_passed, (unsigned long)out->cases_run);
 	return ESP_OK;
 }
+bool keemash_mesh_sensor_snapshot_valid(
+	const mesh_v2_sensor_snapshot_payload_t *snapshot, size_t payload_len)
+{
+	if (!snapshot || payload_len != sizeof(*snapshot) ||
+	    snapshot->count > MESH_V2_SENSOR_MAX_ENTRIES) {
+		return false;
+	}
+
+	for (uint8_t i = 0; i < snapshot->count; i++) {
+		const mesh_v2_sensor_entry_t *entry = &snapshot->entries[i];
+		if (entry->metric_id < MESH_V2_SENSOR_METRIC_CO2_PPM ||
+		    entry->metric_id > MESH_V2_SENSOR_METRIC_HEART_RATE_BPM ||
+		    (entry->status & ~MESH_V2_SENSOR_STATUS_MASK) != 0 ||
+		    entry->scale10 < -9 || entry->scale10 > 9) {
+			return false;
+		}
+	}
+	return true;
+}

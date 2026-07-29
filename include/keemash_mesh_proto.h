@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define KEEMASH_MESH_CORE_VERSION	0x00050000UL
+#define KEEMASH_MESH_CORE_VERSION	0x00060000UL
 
 #define MESH_PKT_MAGIC			0xA5
 #define MESH_PKT_VERSION		1
@@ -105,6 +105,7 @@ extern "C" {
 #define MESH_V2_CAP_TYPED_MEMORY		0x00000080UL
 #define MESH_V2_CAP_OTA			0x00000100UL
 #define MESH_V2_CAP_TYPED_TIME		0x00000200UL
+#define MESH_V2_CAP_TYPED_SENSOR		0x00000400UL
 
 #define MESH_V2_RELIABLE_PROFILE_VERSION	1
 #define MESH_V2_RELIABLE_WINDOW		32
@@ -153,7 +154,8 @@ extern "C" {
 #define MESH_V2_TUNNEL_CHANNEL_TOPOLOGY	6
 #define MESH_V2_TUNNEL_CHANNEL_OTA	7
 #define MESH_V2_TUNNEL_CHANNEL_TIME	8
-#define MESH_V2_TUNNEL_CHANNEL_MAX	8
+#define MESH_V2_TUNNEL_CHANNEL_SENSOR	9
+#define MESH_V2_TUNNEL_CHANNEL_MAX	9
 #define MESH_V2_TUNNEL_REPLAY_RING_SIZE	8
 #define MESH_V2_TUNNEL_INNER_MAX	156
 #define MESH_V2_TUNNEL_LOG_LINE_MAX	128
@@ -166,6 +168,24 @@ extern "C" {
 #define MESH_V2_TUNNEL_FLAG_FRAGMENT	0x08
 #define MESH_V2_TUNNEL_TTL_DEFAULT	8
 #define MESH_V2_TASK_SNAPSHOT_FLAG_LAST	0x01
+
+#define MESH_V2_SENSOR_MAX_ENTRIES	12
+
+#define MESH_V2_SENSOR_METRIC_CO2_PPM		1
+#define MESH_V2_SENSOR_METRIC_TEMPERATURE_C	2
+#define MESH_V2_SENSOR_METRIC_HUMIDITY_RH	3
+#define MESH_V2_SENSOR_METRIC_ILLUMINANCE_LUX	4
+#define MESH_V2_SENSOR_METRIC_HEART_RATE_BPM	5
+
+#define MESH_V2_SENSOR_STATUS_VALID		0x01
+#define MESH_V2_SENSOR_STATUS_STALE		0x02
+#define MESH_V2_SENSOR_STATUS_ERROR		0x04
+#define MESH_V2_SENSOR_STATUS_CALIBRATED		0x08
+#define MESH_V2_SENSOR_STATUS_MASK		0x0f
+
+#define MESH_V2_SENSOR_FLAG_LEGACY_REPLY		0x0001
+#define MESH_V2_SENSOR_FLAG_AUTOMATION_UPDATE	0x0002
+#define MESH_V2_SENSOR_FLAG_PERIODIC		0x0004
 
 typedef struct __attribute__((packed)) {
 	uint8_t		magic;
@@ -624,6 +644,23 @@ typedef struct __attribute__((packed)) {
 	uint8_t		rsv[3];
 } mesh_v2_memory_payload_t;
 
+typedef struct __attribute__((packed)) {
+	uint16_t	metric_id;
+	uint8_t		status;
+	int8_t		scale10;
+	int32_t		value;
+} mesh_v2_sensor_entry_t;
+
+typedef struct __attribute__((packed)) {
+	uint32_t	generation;
+	uint32_t	sample_uptime_ms;
+	uint32_t	request_id;
+	uint16_t	flags;
+	uint8_t		count;
+	uint8_t		rsv;
+	mesh_v2_sensor_entry_t entries[MESH_V2_SENSOR_MAX_ENTRIES];
+} mesh_v2_sensor_snapshot_payload_t;
+
 #ifndef __cplusplus
 _Static_assert(sizeof(mesh_v2_hdr_t) + sizeof(mesh_v2_reliable_hdr_t) +
 		       MESH_V2_RELIABLE_INNER_MAX <= MESH_V2_PACKET_MAX,
@@ -632,6 +669,11 @@ _Static_assert(sizeof(mesh_v2_control_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "control payload unexpectedly requires fragmentation");
 _Static_assert(sizeof(mesh_v2_memory_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "memory payload unexpectedly requires fragmentation");
+_Static_assert(sizeof(mesh_v2_sensor_entry_t) == 8,
+	       "sensor entry wire size changed");
+_Static_assert(sizeof(mesh_v2_sensor_snapshot_payload_t) <=
+		       MESH_V2_RELIABLE_INNER_MAX,
+	       "sensor snapshot unexpectedly requires fragmentation");
 _Static_assert(sizeof(mesh_v2_ota_status_payload_t) <=
 		       MESH_V2_RELIABLE_INNER_MAX * MESH_V2_RELIABLE_MAX_FRAGMENTS,
 	       "OTA status payload exceeds reliable message capacity");

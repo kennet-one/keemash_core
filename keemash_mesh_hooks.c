@@ -35,6 +35,13 @@ void __attribute__((weak)) keemash_mesh_root_on_memory_snapshot(const uint8_t ma
     (void)mac; (void)snapshot;
 }
 
+void __attribute__((weak)) keemash_mesh_root_on_sensor_snapshot(
+    const uint8_t mac[6],
+    const mesh_v2_sensor_snapshot_payload_t *snapshot)
+{
+    (void)mac; (void)snapshot;
+}
+
 void __attribute__((weak)) keemash_mesh_root_on_ota_status(const uint8_t mac[6],
                                                            const mesh_v2_ota_status_payload_t *status,
                                                            size_t status_len)

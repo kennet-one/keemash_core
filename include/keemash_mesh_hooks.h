@@ -25,6 +25,9 @@ void keemash_mesh_root_on_task_snapshot(const uint8_t mac[6],
                                         const mesh_v2_task_snapshot_payload_t *snapshot);
 void keemash_mesh_root_on_memory_snapshot(const uint8_t mac[6],
                                           const mesh_v2_memory_payload_t *snapshot);
+void keemash_mesh_root_on_sensor_snapshot(
+	const uint8_t mac[6],
+	const mesh_v2_sensor_snapshot_payload_t *snapshot);
 void keemash_mesh_root_on_ota_status(const uint8_t mac[6],
                                      const mesh_v2_ota_status_payload_t *status,
                                      size_t status_len);

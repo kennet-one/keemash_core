@@ -24,6 +24,7 @@ bool mesh_v2_node_get_root_mac(uint8_t root_mac[6]);
 // again. Ordinary route loss and parent switches must not call this.
 void mesh_v2_node_forget_root(void);
 void mesh_v2_node_set_relay_eligible(bool eligible);
+void mesh_v2_node_enable_capabilities(uint32_t capabilities);
 void mesh_v2_node_update_topology(const uint8_t parent_mac[6],
                                   const uint8_t root_mac[6],
                                   uint16_t layer,
@@ -70,6 +71,8 @@ esp_err_t mesh_v2_node_send_nodeinfo(void);
 esp_err_t mesh_v2_node_send_log_line(const char *line);
 esp_err_t mesh_v2_node_send_topology(void);
 esp_err_t mesh_v2_node_send_memory(void);
+esp_err_t mesh_v2_node_send_sensor_snapshot(
+	const mesh_v2_sensor_snapshot_payload_t *snapshot);
 esp_err_t mesh_v2_node_send_ota_status(const mesh_v2_ota_status_payload_t *status);
 esp_err_t mesh_v2_node_send_event(uint32_t command_id, const char *text);
 bool mesh_v2_node_reliable_ready(void);

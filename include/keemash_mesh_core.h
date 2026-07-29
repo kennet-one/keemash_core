@@ -173,6 +173,8 @@ esp_err_t keemash_rel_peer_route(keemash_rel_ctx_t *ctx,
 esp_err_t keemash_rel_remove_peer(keemash_rel_ctx_t *ctx, const uint8_t peer[6]);
 uint32_t keemash_rel_peer_capabilities(keemash_rel_ctx_t *ctx,
 				       const uint8_t peer[6]);
+bool keemash_mesh_sensor_snapshot_valid(
+	const mesh_v2_sensor_snapshot_payload_t *snapshot, size_t payload_len);
 esp_err_t keemash_rel_debug_force_next_seq(keemash_rel_ctx_t *ctx,
 						   const uint8_t peer_mac[6],
 						   uint8_t channel,

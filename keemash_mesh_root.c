@@ -220,6 +220,11 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		keemash_mesh_root_on_memory_snapshot(peer, payload);
 		return;
 	}
+	if (channel == MESH_V2_TUNNEL_CHANNEL_SENSOR &&
+	    keemash_mesh_sensor_snapshot_valid(payload, payload_len)) {
+		keemash_mesh_root_on_sensor_snapshot(peer, payload);
+		return;
+	}
 	if (channel == MESH_V2_TUNNEL_CHANNEL_OTA &&
 	    payload_len >= sizeof(mesh_v2_ota_status_payload_t)) {
 		keemash_mesh_root_on_ota_status(peer, payload, payload_len);

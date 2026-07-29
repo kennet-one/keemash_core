@@ -126,6 +126,7 @@ typedef struct {
 static command_cache_t s_command_cache[32];
 static uint8_t s_command_cache_next = 0;
 static uint32_t s_debug_dedupe_action_count = 0;
+static uint32_t s_app_capabilities = 0;
 
 static void mac_copy(uint8_t dst[6], const uint8_t src[6]);
 static void local_mac(uint8_t mac[6]);
@@ -138,11 +139,20 @@ static uint32_t node_capabilities(void)
 	uint32_t caps = MESH_V2_CAP_TOPOLOGY | MESH_V2_CAP_TYPED_CONTROL |
 			MESH_V2_CAP_TYPED_MEMORY | MESH_V2_CAP_OTA |
 			MESH_V2_CAP_TYPED_TIME;
+	caps |= s_app_capabilities;
 #if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	caps |= MESH_V2_CAP_TUNNEL;
 #endif
 	if (s_relay_eligible) caps |= MESH_V2_CAP_MESH_RELAY_ELIGIBLE;
 	return caps;
+}
+
+void mesh_v2_node_enable_capabilities(uint32_t capabilities)
+{
+	const uint32_t allowed = MESH_V2_CAP_TYPED_SENSOR;
+	portENTER_CRITICAL(&s_lock);
+	s_app_capabilities |= capabilities & allowed;
+	portEXIT_CRITICAL(&s_lock);
 }
 
 static void command_cache_clear(void)
@@ -1477,6 +1487,25 @@ esp_err_t mesh_v2_node_send_memory(void)
 	}
 	esp_err_t err = keemash_rel_send(s_rel, root,
 		MESH_V2_TUNNEL_CHANNEL_MEMORY, &p, sizeof(p),
+		KEEMASH_REL_PRIORITY_HIGH);
+	xSemaphoreGiveRecursive(s_rel_lock);
+	return err;
+}
+
+esp_err_t mesh_v2_node_send_sensor_snapshot(
+	const mesh_v2_sensor_snapshot_payload_t *snapshot)
+{
+	if (!keemash_mesh_sensor_snapshot_valid(snapshot, sizeof(*snapshot))) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	if (!s_rel || !s_rel_lock) return ESP_ERR_INVALID_STATE;
+
+	const uint8_t root[6] = {0};
+	if (xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(500)) != pdTRUE) {
+		return ESP_ERR_TIMEOUT;
+	}
+	esp_err_t err = keemash_rel_send(s_rel, root,
+		MESH_V2_TUNNEL_CHANNEL_SENSOR, snapshot, sizeof(*snapshot),
 		KEEMASH_REL_PRIORITY_HIGH);
 	xSemaphoreGiveRecursive(s_rel_lock);
 	return err;
