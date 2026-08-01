@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.6.4`.
-API compatibility level: `0.6.4` (`KEEMASH_MESH_CORE_VERSION == 0x00060400UL`).
+Latest stable release: `v0.6.5`.
+API compatibility level: `0.6.5` (`KEEMASH_MESH_CORE_VERSION == 0x00060500UL`).
 
 License: `Apache-2.0`.
 
@@ -51,8 +51,8 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00060400UL
-#error "firmware requires keemash_mesh_core 0.6.4"
+#if KEEMASH_MESH_CORE_VERSION != 0x00060500UL
+#error "firmware requires keemash_mesh_core 0.6.5"
 #endif
 ```
 
@@ -61,6 +61,11 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.6.5` maps the public forwarding-node role to ESP-IDF's pre-join
+`MESH_IDLE` designation. ESP-MESH changes it to runtime `MESH_NODE` after a
+successful self-organized join; assigning `MESH_NODE` before start is rejected
+with `ESP_ERR_MESH_ARGUMENT`.
 
 `v0.6.4` adds `keemash_mesh_apply_single_root_policy()`. It applies the same
 fixed-root setting to every participant, disables ESP-MESH's default allowance
@@ -132,7 +137,7 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.6.4` | Current root release with active ping and enforced single-root policy. |
+| `node0` | `v0.6.5` | Current root release with active ping and enforced single-root policy. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
 | `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |

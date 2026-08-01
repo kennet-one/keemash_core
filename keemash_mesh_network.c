@@ -13,7 +13,8 @@ esp_err_t keemash_mesh_apply_single_root_policy(
 		mesh_type = MESH_ROOT;
 		break;
 	case KEEMASH_MESH_ROLE_NODE:
-		mesh_type = MESH_NODE;
+		/* MESH_NODE is assigned by ESP-MESH after a self-organized join. */
+		mesh_type = MESH_IDLE;
 		break;
 	case KEEMASH_MESH_ROLE_LEAF:
 		mesh_type = MESH_LEAF;
