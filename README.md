@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.6.3`.
-API compatibility level: `0.6.3` (`KEEMASH_MESH_CORE_VERSION == 0x00060300UL`).
+Latest stable release: `v0.6.4`.
+API compatibility level: `0.6.4` (`KEEMASH_MESH_CORE_VERSION == 0x00060400UL`).
 
 License: `Apache-2.0`.
 
@@ -32,6 +32,7 @@ License: `Apache-2.0`.
 - reusable V1/V2 time-application helper;
 - reusable timestamped UART log hook;
 - automatic TX broker packet-priority classification.
+- reusable single-root network policy for root, forwarding node and leaf roles.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
 reliability between a node and root; it does not add an application hop-by-hop
@@ -50,8 +51,8 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00060300UL
-#error "firmware requires keemash_mesh_core 0.6.3"
+#if KEEMASH_MESH_CORE_VERSION != 0x00060400UL
+#error "firmware requires keemash_mesh_core 0.6.4"
 #endif
 ```
 
@@ -60,6 +61,12 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.6.4` adds `keemash_mesh_apply_single_root_policy()`. It applies the same
+fixed-root setting to every participant, disables ESP-MESH's default allowance
+for simultaneous roots and assigns the explicit root/node/leaf role. Existing
+deployed firmware remains wire-compatible, but each peer must adopt this policy
+to prevent split routing after root outages.
 
 `v0.6.3` adds best-effort application PING/PONG diagnostics that are separate
 from reliable transport RTT and never consume replay slots or LOST counters.
@@ -125,7 +132,7 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.6.3` | Current root release with active ping and topology alias diagnostics. |
+| `node0` | `v0.6.4` | Current root release with active ping and enforced single-root policy. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
 | `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |
