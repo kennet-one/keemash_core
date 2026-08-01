@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define KEEMASH_MESH_CORE_VERSION	0x00060200UL
+#define KEEMASH_MESH_CORE_VERSION	0x00060300UL
 
 #define MESH_PKT_MAGIC			0xA5
 #define MESH_PKT_VERSION		1
@@ -106,6 +106,7 @@ extern "C" {
 #define MESH_V2_CAP_OTA			0x00000100UL
 #define MESH_V2_CAP_TYPED_TIME		0x00000200UL
 #define MESH_V2_CAP_TYPED_SENSOR		0x00000400UL
+#define MESH_V2_CAP_ACTIVE_PING		0x00000800UL
 
 #define MESH_V2_RELIABLE_PROFILE_VERSION	1
 #define MESH_V2_RELIABLE_WINDOW		32
@@ -469,9 +470,22 @@ typedef struct __attribute__((packed)) {
 	uint8_t		rsv[2];
 } mesh_v2_topology_v3_payload_t;
 
+typedef struct __attribute__((packed)) {
+	mesh_v2_topology_v3_payload_t v3;
+	uint8_t		self_ap_mac[6];
+	uint8_t		rsv[2];
+} mesh_v2_topology_v4_payload_t;
+
+typedef struct __attribute__((packed)) {
+	uint32_t	ping_id;
+	uint32_t	root_session_id;
+} mesh_v2_ping_payload_t;
+
 #ifndef __cplusplus
 _Static_assert(sizeof(mesh_v2_topology_v3_payload_t) <= MESH_V2_TUNNEL_INNER_MAX,
                "mesh_v2_topology_v3_payload_t exceeds tunnel inner payload");
+_Static_assert(sizeof(mesh_v2_topology_v4_payload_t) <= MESH_V2_TUNNEL_INNER_MAX,
+               "mesh_v2_topology_v4_payload_t exceeds tunnel inner payload");
 #endif
 
 typedef struct __attribute__((packed)) {

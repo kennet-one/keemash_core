@@ -3,6 +3,15 @@
 
 #include <string.h>
 
+#include "esp_mac.h"
+
+bool __attribute__((weak)) keemash_mesh_get_ap_mac(uint8_t mac[6])
+{
+	if (!mac) return false;
+	memset(mac, 0, 6);
+	return esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP) == ESP_OK;
+}
+
 void __attribute__((weak)) keemash_mesh_root_on_node_seen_uptime(const uint8_t mac[6],
                                                                  const char *tag,
                                                                  bool uptime_valid,

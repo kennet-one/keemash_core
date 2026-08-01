@@ -49,6 +49,10 @@ typedef struct {
 	uint32_t retry_count;
 	uint32_t ack_age_ms;
 	uint32_t rtt_ms;
+	bool ping_valid;
+	uint32_t ping_ms;
+	uint32_t ping_age_ms;
+	uint32_t ping_timeout_count;
 	uint32_t overflow_count;
 	uint8_t lost_reason;
 	uint32_t capabilities;

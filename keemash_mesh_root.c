@@ -65,6 +65,14 @@ typedef struct {
 	mesh_v2_time_payload_t pending_time;
 	uint32_t time_superseded_count;
 	uint32_t duplicate_tag_count;
+	bool ping_pending;
+	bool ping_valid;
+	uint32_t ping_id;
+	uint32_t ping_sent_ms;
+	uint32_t ping_last_attempt_ms;
+	uint32_t ping_last_rx_ms;
+	uint32_t ping_ms;
+	uint32_t ping_timeout_count;
 	tunnel_rx_channel_t rx[MESH_V2_TUNNEL_CHANNEL_MAX + 1];
 	tunnel_tx_channel_t tx[MESH_V2_TUNNEL_CHANNEL_MAX + 1];
 } root_node_state_t;
@@ -93,6 +101,9 @@ typedef struct {
 static command_result_slot_t s_command_results[COMMAND_RESULT_CACHE_SIZE];
 static uint8_t s_command_result_next = 0;
 static uint32_t s_next_command_id = 1;
+static uint32_t s_next_ping_id = 1;
+static uint8_t s_ping_cursor = 0;
+static uint32_t s_last_ping_dispatch_ms = 0;
 
 static void mac_copy(uint8_t dst[6], const uint8_t src[6]);
 static bool mac_eq(const uint8_t a[6], const uint8_t b[6]);
@@ -100,6 +111,10 @@ static void local_mac(uint8_t mac[6]);
 static void copy_packet_text(char *dst, size_t dst_sz, const char *src, size_t src_sz);
 static uint32_t ms_now(void);
 static root_node_state_t *find_node_locked(const uint8_t mac[6], bool create);
+static esp_err_t send_packet_to_mac(const uint8_t mac[6], uint8_t type,
+				    uint32_t session_id, uint32_t seq,
+				    uint32_t ack_seq, const void *payload,
+				    size_t payload_len);
 
 static bool current_rel_stats(const uint8_t peer[6], keemash_rel_stats_t *out)
 {
@@ -326,6 +341,74 @@ static void prune_stale_route_down_peers(void)
 	}
 }
 
+static void active_ping_poll_one(void)
+{
+	if (!s_rel) return;
+
+	uint32_t now = ms_now();
+	uint8_t mac[6] = {0};
+	mesh_v2_ping_payload_t ping = {0};
+	bool found = false;
+	bool pending = false;
+
+	portENTER_CRITICAL(&s_lock);
+	for (uint32_t i = 0; i < MESH_V2_MAX_NODES; i++) {
+		root_node_state_t *st = &s_nodes[i];
+		if (st->used && st->ping_pending &&
+		    (uint32_t)(now - st->ping_sent_ms) >=
+			    CONFIG_KEEMASH_ACTIVE_PING_TIMEOUT_MS) {
+			st->ping_pending = false;
+			st->ping_valid = false;
+			st->ping_timeout_count++;
+		}
+		if (st->used && st->ping_pending) pending = true;
+	}
+	if (pending ||
+	    (s_last_ping_dispatch_ms != 0 &&
+	     (uint32_t)(now - s_last_ping_dispatch_ms) <
+		     CONFIG_KEEMASH_ACTIVE_PING_PERIOD_MS)) {
+		portEXIT_CRITICAL(&s_lock);
+		return;
+	}
+
+	for (uint32_t offset = 0; offset < MESH_V2_MAX_NODES; offset++) {
+		uint32_t idx = (uint32_t)(s_ping_cursor + offset) % MESH_V2_MAX_NODES;
+		root_node_state_t *st = &s_nodes[idx];
+		if (!st->used || !st->route_up || st->ping_pending ||
+		    (st->capabilities & MESH_V2_CAP_ACTIVE_PING) == 0 ||
+		    (st->ping_last_attempt_ms != 0 &&
+		     (uint32_t)(now - st->ping_last_attempt_ms) <
+			     CONFIG_KEEMASH_ACTIVE_PING_PERIOD_MS)) {
+			continue;
+		}
+
+		uint32_t ping_id = s_next_ping_id++;
+		if (ping_id == 0) ping_id = s_next_ping_id++;
+		st->ping_pending = true;
+		st->ping_id = ping_id;
+		st->ping_sent_ms = now;
+		st->ping_last_attempt_ms = now;
+		mac_copy(mac, st->mac);
+		ping.ping_id = ping_id;
+		ping.root_session_id = keemash_rel_local_session(s_rel);
+		s_last_ping_dispatch_ms = now;
+		s_ping_cursor = (uint8_t)((idx + 1U) % MESH_V2_MAX_NODES);
+		found = true;
+		break;
+	}
+	portEXIT_CRITICAL(&s_lock);
+
+	if (!found) return;
+	if (!keemash_rel_peer_ready(s_rel, mac) ||
+	    send_packet_to_mac(mac, MESH_V2_TYPE_PING, ping.root_session_id,
+	                       0, 0, &ping, sizeof(ping)) != ESP_OK) {
+		portENTER_CRITICAL(&s_lock);
+		root_node_state_t *st = find_node_locked(mac, false);
+		if (st && st->ping_id == ping.ping_id) st->ping_pending = false;
+		portEXIT_CRITICAL(&s_lock);
+	}
+}
+
 static void rel_poll_task(void *arg)
 {
 	(void)arg;
@@ -334,6 +417,7 @@ static void rel_poll_task(void *arg)
 		    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
 			keemash_rel_poll(s_rel);
 			flush_one_pending_time();
+			active_ping_poll_one();
 			prune_stale_route_down_peers();
 			xSemaphoreGiveRecursive(s_rel_lock);
 		}
@@ -540,12 +624,45 @@ static void reset_session_locked(root_node_state_t *st, const mesh_v2_hdr_t *h)
 	st->tunnel_seen = false;
 	st->last_ack_tx_ms = 0;
 	st->last_ack_err = 0;
+	st->ping_pending = false;
+	st->ping_valid = false;
 	for (uint32_t ch = 0; ch <= MESH_V2_TUNNEL_CHANNEL_MAX; ch++) {
 		memset(&st->rx[ch], 0, sizeof(st->rx[ch]));
 		memset(&st->tx[ch], 0, sizeof(st->tx[ch]));
 		st->rx[ch].expected_seq = 1;
 		st->tx[ch].next_seq = 1;
 	}
+}
+
+static esp_err_t handle_pong(const uint8_t from[6], const mesh_v2_hdr_t *h,
+			     const uint8_t *payload)
+{
+	if (!from || !h || !payload ||
+	    h->payload_len != sizeof(mesh_v2_ping_payload_t) || !s_rel) {
+		return ESP_ERR_INVALID_ARG;
+	}
+
+	const mesh_v2_ping_payload_t *pong =
+		(const mesh_v2_ping_payload_t *)payload;
+	keemash_rel_stats_t rel = {0};
+	if (pong->root_session_id != keemash_rel_local_session(s_rel) ||
+	    !current_rel_stats(from, &rel) || !rel.ready) {
+		return ESP_ERR_INVALID_STATE;
+	}
+
+	uint32_t now = ms_now();
+	bool accepted = false;
+	portENTER_CRITICAL(&s_lock);
+	root_node_state_t *st = find_node_locked(from, false);
+	if (st && st->ping_pending && st->ping_id == pong->ping_id) {
+		st->ping_pending = false;
+		st->ping_valid = true;
+		st->ping_ms = (uint32_t)(now - st->ping_sent_ms);
+		st->ping_last_rx_ms = now;
+		accepted = true;
+	}
+	portEXIT_CRITICAL(&s_lock);
+	return accepted ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 static esp_err_t send_packet_to_mac(const uint8_t mac[6], uint8_t type, uint32_t session_id,
@@ -1078,6 +1195,10 @@ esp_err_t mesh_v2_root_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 		return ESP_OK;
 	}
 
+	if (h->type == MESH_V2_TYPE_PONG) {
+		return handle_pong(from, h, payload);
+	}
+
 	if (h->type == MESH_V2_TYPE_TUNNEL_DATA) {
 		handle_tunnel_data(h, payload);
 		return ESP_OK;
@@ -1145,6 +1266,11 @@ bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 			? ms_now() - st->route_changed_ms : 0;
 		out->time_superseded_count = st->time_superseded_count;
 		out->duplicate_tag_count = st->duplicate_tag_count;
+		out->ping_valid = st->ping_valid;
+		out->ping_ms = st->ping_ms;
+		out->ping_age_ms = st->ping_last_rx_ms
+			? ms_now() - st->ping_last_rx_ms : UINT32_MAX;
+		out->ping_timeout_count = st->ping_timeout_count;
 		for (uint32_t ch = 1; ch <= MESH_V2_TUNNEL_CHANNEL_MAX; ch++) {
 			const tunnel_rx_channel_t *rx = &st->rx[ch];
 			out->gap_count += rx->gap_count;
@@ -1667,6 +1793,10 @@ void mesh_v2_root_sync_routes(const uint8_t *macs, size_t count)
 		}
 		if (st->route_up != present) st->route_changed_ms = now;
 		st->route_up = present;
+		if (!present) {
+			st->ping_pending = false;
+			st->ping_valid = false;
+		}
 		if (peer_count < MESH_V2_MAX_NODES) {
 			mac_copy(peers[peer_count], st->mac);
 			route_up[peer_count++] = present;

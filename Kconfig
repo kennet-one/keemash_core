@@ -43,6 +43,19 @@ menu "KeeMASH Reliable Mesh"
         range 60000 3600000
         default 300000
 
+    config KEEMASH_ACTIVE_PING_PERIOD_MS
+        int "Active peer ping period (ms)"
+        range 1000 60000
+        default 5000
+        help
+            Send one best-effort application PING to one peer per period.
+            PING/PONG diagnostics do not consume replay slots or affect LOST.
+
+    config KEEMASH_ACTIVE_PING_TIMEOUT_MS
+        int "Active peer ping timeout (ms)"
+        range 500 30000
+        default 4000
+
     config KEEMASH_REL_FAULT_DROP_DATA_EVERY
         int "Debug: drop every Nth reliable DATA packet"
         range 0 10000

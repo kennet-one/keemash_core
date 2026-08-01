@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.6.2`.
-API compatibility level: `0.6.2` (`KEEMASH_MESH_CORE_VERSION == 0x00060200UL`).
+Latest stable release: `v0.6.3`.
+API compatibility level: `0.6.3` (`KEEMASH_MESH_CORE_VERSION == 0x00060300UL`).
 
 License: `Apache-2.0`.
 
@@ -50,8 +50,8 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00060200UL
-#error "firmware requires keemash_mesh_core 0.6.2"
+#if KEEMASH_MESH_CORE_VERSION != 0x00060300UL
+#error "firmware requires keemash_mesh_core 0.6.3"
 #endif
 ```
 
@@ -60,6 +60,12 @@ firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
+
+`v0.6.3` adds best-effort application PING/PONG diagnostics that are separate
+from reliable transport RTT and never consume replay slots or LOST counters.
+It also adds backward-compatible topology v4 with a node SoftAP MAC alias so a
+root UI can attach direct children to the correct parent identity. Older nodes
+remain compatible and simply report no active-ping capability or AP alias.
 
 `v0.6.0` adds reliable typed SENSOR snapshots, explicit sensor capability
 negotiation, five initial metric identifiers and strict payload validation.
@@ -119,7 +125,7 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.5.9` | Current root release with command and root-session recovery diagnostics. |
+| `node0` | `v0.6.3` | Current root release with active ping and topology alias diagnostics. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
 | `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |

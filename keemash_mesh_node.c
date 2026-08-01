@@ -141,7 +141,7 @@ static uint32_t node_capabilities(void)
 {
 	uint32_t caps = MESH_V2_CAP_TOPOLOGY | MESH_V2_CAP_TYPED_CONTROL |
 			MESH_V2_CAP_TYPED_MEMORY | MESH_V2_CAP_OTA |
-			MESH_V2_CAP_TYPED_TIME;
+			MESH_V2_CAP_TYPED_TIME | MESH_V2_CAP_ACTIVE_PING;
 	caps |= s_app_capabilities;
 #if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	caps |= MESH_V2_CAP_TUNNEL;
@@ -1282,58 +1282,59 @@ esp_err_t mesh_v2_node_send_log_line(const char *line)
 
 esp_err_t mesh_v2_node_send_topology(void)
 {
-	mesh_v2_topology_v3_payload_t p;
+	mesh_v2_topology_v4_payload_t p;
 	memset(&p, 0, sizeof(p));
 	mesh_v2_node_diag_t diag;
 
 	recover_root_link_if_needed();
 
 	portENTER_CRITICAL(&s_lock);
-	copy_tag(p.v2.base.tag, sizeof(p.v2.base.tag), s_tag);
-	mac_copy(p.v2.base.parent_mac, s_parent_mac);
-	mac_copy(p.v2.base.root_mac, s_topology_root_mac);
-	p.v2.base.layer = s_layer;
-	p.v2.base.max_layer = s_max_layer;
-	p.v2.base.parent_rssi = s_parent_rssi;
-	p.v2.base.child_count = s_child_count;
-	p.v2.base.gap_count = s_tunnel_gap_count;
-	p.v2.base.lost_count = s_tunnel_lost_count;
-	p.v2.base.replay_count = s_tunnel_replay_count;
-	p.v2.base.recovery_phase = s_recovery_phase;
+	copy_tag(p.v3.v2.base.tag, sizeof(p.v3.v2.base.tag), s_tag);
+	mac_copy(p.v3.v2.base.parent_mac, s_parent_mac);
+	mac_copy(p.v3.v2.base.root_mac, s_topology_root_mac);
+	p.v3.v2.base.layer = s_layer;
+	p.v3.v2.base.max_layer = s_max_layer;
+	p.v3.v2.base.parent_rssi = s_parent_rssi;
+	p.v3.v2.base.child_count = s_child_count;
+	p.v3.v2.base.gap_count = s_tunnel_gap_count;
+	p.v3.v2.base.lost_count = s_tunnel_lost_count;
+	p.v3.v2.base.replay_count = s_tunnel_replay_count;
+	p.v3.v2.base.recovery_phase = s_recovery_phase;
 	diag = s_diag;
 	portEXIT_CRITICAL(&s_lock);
 
-	p.v2.base.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-	p.v2.base.capabilities = node_capabilities() | MESH_V2_CAP_RELIABLE_E2E |
+	p.v3.v2.base.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+	p.v3.v2.base.capabilities = node_capabilities() | MESH_V2_CAP_RELIABLE_E2E |
 	                         MESH_V2_CAP_SACK | MESH_V2_CAP_FRAGMENT |
 	                         MESH_V2_CAP_TYPED_CONTROL | MESH_V2_CAP_TYPED_MEMORY;
-	p.v2.base.v1_ok_age_ms = keemash_mesh_node_v1_ok_age_ms();
-	p.v2.base.v2_ack_age_ms = mesh_v2_node_ack_age_ms();
-	p.v2.base.last_send_err = diag.last_mesh_send_err;
-	p.v2.base.log_stream_enabled = keemash_mesh_node_log_stream_enabled() ? 1 : 0;
-	p.v2.base.diag_flags = MESH_V2_TOPO_DIAG_HAS_EXT | diag.diag_flags;
-	if (p.v2.base.uptime_s < 300U) {
-		p.v2.base.diag_flags |= MESH_V2_TOPO_DIAG_RECENT_REBOOT;
+	p.v3.v2.base.v1_ok_age_ms = keemash_mesh_node_v1_ok_age_ms();
+	p.v3.v2.base.v2_ack_age_ms = mesh_v2_node_ack_age_ms();
+	p.v3.v2.base.last_send_err = diag.last_mesh_send_err;
+	p.v3.v2.base.log_stream_enabled = keemash_mesh_node_log_stream_enabled() ? 1 : 0;
+	p.v3.v2.base.diag_flags = MESH_V2_TOPO_DIAG_HAS_EXT | diag.diag_flags;
+	if (p.v3.v2.base.uptime_s < 300U) {
+		p.v3.v2.base.diag_flags |= MESH_V2_TOPO_DIAG_RECENT_REBOOT;
 	}
 	uint32_t running_size = 0;
 	uint32_t update_size = 0;
-	fill_ota_slot_info(p.v2.ota_running_label, p.v2.ota_update_label,
+	fill_ota_slot_info(p.v3.v2.ota_running_label, p.v3.v2.ota_update_label,
 	                   &running_size, &update_size);
-	p.v2.ota_running_size = running_size;
-	p.v2.ota_update_size = update_size;
-	p.boot_seq = diag.boot_seq;
-	p.last_recovery_action_ms = diag.last_recovery_action_ms;
-	p.last_mesh_send_err = diag.last_mesh_send_err;
-	p.ack_stale_count = diag.ack_stale_count;
-	p.tx_without_ack_count = diag.tx_without_ack_count;
-	p.reset_reason = diag.reset_reason;
-	p.parent_disconnect_count = diag.parent_disconnect_count;
-	p.no_parent_count = diag.no_parent_count;
-	p.rootless_count = diag.rootless_count;
-	p.soft_reconnect_count = diag.soft_reconnect_count;
-	p.mesh_restart_count = diag.mesh_restart_count;
-	p.last_parent_disconnect_reason = diag.last_parent_disconnect_reason;
-	p.last_recovery_reason = diag.last_recovery_reason;
+	p.v3.v2.ota_running_size = running_size;
+	p.v3.v2.ota_update_size = update_size;
+	p.v3.boot_seq = diag.boot_seq;
+	p.v3.last_recovery_action_ms = diag.last_recovery_action_ms;
+	p.v3.last_mesh_send_err = diag.last_mesh_send_err;
+	p.v3.ack_stale_count = diag.ack_stale_count;
+	p.v3.tx_without_ack_count = diag.tx_without_ack_count;
+	p.v3.reset_reason = diag.reset_reason;
+	p.v3.parent_disconnect_count = diag.parent_disconnect_count;
+	p.v3.no_parent_count = diag.no_parent_count;
+	p.v3.rootless_count = diag.rootless_count;
+	p.v3.soft_reconnect_count = diag.soft_reconnect_count;
+	p.v3.mesh_restart_count = diag.mesh_restart_count;
+	p.v3.last_parent_disconnect_reason = diag.last_parent_disconnect_reason;
+	p.v3.last_recovery_reason = diag.last_recovery_reason;
+	(void)keemash_mesh_get_ap_mac(p.self_ap_mac);
 
 	esp_err_t err = ESP_ERR_INVALID_STATE;
 	if (s_rel && s_rel_lock &&
@@ -1834,6 +1835,21 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 		return ESP_ERR_INVALID_ARG;
 	}
 	if (!mac_eq(h->src_mac, from)) return ESP_ERR_INVALID_ARG;
+
+	if (h->type == MESH_V2_TYPE_PING) {
+		if (h->payload_len != sizeof(mesh_v2_ping_payload_t) ||
+		    !s_lossless_negotiated) {
+			return ESP_ERR_INVALID_STATE;
+		}
+		const mesh_v2_ping_payload_t *ping =
+			(const mesh_v2_ping_payload_t *)payload;
+		keemash_rel_stats_t stats = {0};
+		if (!mesh_v2_node_reliable_stats(&stats) || !stats.ready ||
+		    ping->root_session_id != stats.root_session_id) {
+			return ESP_ERR_INVALID_STATE;
+		}
+		return send_packet(MESH_V2_TYPE_PONG, ping, sizeof(*ping), false);
+	}
 
 #if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	return ESP_ERR_NOT_SUPPORTED;

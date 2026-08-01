@@ -15,6 +15,7 @@ extern "C" {
 // Transport/local hooks. Firmware provides strong definitions.
 esp_err_t keemash_mesh_transport_send(const uint8_t dst[6], const void *packet, size_t packet_len);
 void keemash_mesh_get_local_mac(uint8_t mac[6]);
+bool keemash_mesh_get_ap_mac(uint8_t mac[6]);
 
 // Root application hooks. Default weak implementations are no-ops.
 void keemash_mesh_root_on_node_seen_uptime(const uint8_t mac[6], const char *tag,
