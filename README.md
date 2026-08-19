@@ -5,10 +5,14 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.6.5`.
-API compatibility level: `0.6.5` (`KEEMASH_MESH_CORE_VERSION == 0x00060500UL`).
+Latest stable release: `v0.7.0`.
+API compatibility level: `0.7.0` (`KEEMASH_MESH_CORE_VERSION == 0x00070000UL`).
 
 License: `Apache-2.0`.
+
+KeeLink v1 adds the bounded app/root binary codec in ESP-IDF C and Rust. Its
+wire allocation is defined in `protocol/keelink-v1.json`; audio and visual
+builder channels are reserved but intentionally not implemented yet.
 
 ## Scope
 
@@ -27,11 +31,11 @@ License: `Apache-2.0`.
 - transport-origin validation for authenticated root/node traffic;
 - latest-wins typed TIME delivery without stale timestamp replay;
 - reusable root and node facades with ESP-MESH transport hooks;
-- generic task, memory, OTA slot and OTA v2 receiver helpers.
+- generic task, memory, OTA slot and OTA v2 receiver helpers;
 - reusable node log capture, NODEINFO heartbeat and recovery burst runtime;
 - reusable V1/V2 time-application helper;
 - reusable timestamped UART log hook;
-- automatic TX broker packet-priority classification.
+- automatic TX broker packet-priority classification;
 - reusable single-root network policy for root, forwarding node and leaf roles.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
@@ -51,8 +55,8 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00060500UL
-#error "firmware requires keemash_mesh_core 0.6.5"
+#if KEEMASH_MESH_CORE_VERSION != 0x00070000UL
+#error "firmware requires keemash_mesh_core 0.7.0"
 #endif
 ```
 
@@ -62,7 +66,8 @@ unless a node-specific compatibility check requires an older pin.
 
 ### Compatibility And Upgrade Guidance
 
-`v0.6.5` maps the public forwarding-node role to ESP-IDF's pre-join
+`v0.7.0` includes the `v0.6.5` forwarding-node fix and adds KeeLink v1. The
+previous release maps the public forwarding-node role to ESP-IDF's pre-join
 `MESH_IDLE` designation. ESP-MESH changes it to runtime `MESH_NODE` after a
 successful self-organized join; assigning `MESH_NODE` before start is rejected
 with `ESP_ERR_MESH_ARGUMENT`.
@@ -137,7 +142,7 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.6.5` | Current root release with active ping and enforced single-root policy. |
+| `node0` | `v0.7.0` | Current root release with KeeLink v1, active ping and enforced single-root policy. |
 | `kPowerLed` | `v0.5.5` | Current validated node consumer. |
 | `choinka` | `v0.5.5` | Current validated node consumer. |
 | `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |

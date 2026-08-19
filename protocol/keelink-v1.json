@@ -1,0 +1,15 @@
+{
+  "name": "KeeLink",
+  "version": 1,
+  "byte_order": "little-endian",
+  "header_bytes": 32,
+  "max_payload_bytes": 4096,
+  "magic_ascii": "KLNK",
+  "kinds": {"hello":1,"welcome":2,"request":3,"response":4,"event":5,"snapshot":6,"gap":7,"heartbeat":8,"error":9},
+  "channels": {"system":1,"inventory":2,"control":3,"state":4,"sensor":5,"topology":6,"task":7,"memory":8,"log":9,"ota_status":10,"builder_reserved":32,"audio_control_reserved":33},
+  "tlv": {
+    "header_bytes": 6,
+    "layout": ["field_id:u16", "type:u8", "flags:u8", "length:u16", "value:bytes"],
+    "types": {"u32":1,"u64":2,"i32":3,"bool":4,"bytes":5,"utf8":6}
+  }
+}

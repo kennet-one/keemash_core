@@ -1,0 +1,15 @@
+{
+  "protocol": "KeeLink",
+  "version": 1,
+  "vectors": [
+    {
+      "name": "hello_node0",
+      "description": "HELLO on system channel with UTF-8 field 1 and u32 field 2",
+      "frame_hex": "4b4c4e4b010100000100200015000000080706050403020109000000000000000100060005006e6f64653002000100040078563412"
+    }
+  ],
+  "malformed": [
+    {"name": "short_header", "frame_hex": "4b4c4e4b01", "error": "invalid_size"},
+    {"name": "bad_magic", "frame_hex": "0000000001010000010020000000000000000000000000000000000000000000", "error": "invalid_version"}
+  ]
+}

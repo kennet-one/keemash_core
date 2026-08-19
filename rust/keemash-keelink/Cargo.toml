@@ -1,0 +1,12 @@
+[package]
+name = "keemash-keelink"
+version = "0.7.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "KeeLink binary protocol codec for KeeMASH"
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+hex = "0.4"
