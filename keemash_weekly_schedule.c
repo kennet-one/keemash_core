@@ -307,7 +307,9 @@ static void schedule_task(void *arg)
 		expire_stage_locked(schedule, monotonic_ms());
 		config = schedule->config;
 		catch_up = schedule->catch_up_pending && config.enabled && clock_valid;
-		if (catch_up) schedule->catch_up_pending = false;
+		if (catch_up && !schedule->catch_up_on_clock_ready) {
+			schedule->catch_up_pending = false;
+		}
 		xSemaphoreGive(schedule->lock);
 		if (!clock_valid || !config.enabled) continue;
 
@@ -320,13 +322,20 @@ static void schedule_task(void *arg)
 					&config.points[latest], latest, true);
 				if (err != ESP_OK) {
 					record_error(schedule, err);
-				} else if (config.points[latest].minute_of_day == minute &&
-					   xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+				} else if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
 					if (schedule->config.generation == config.generation) {
-						schedule->last_run_day[latest] = local_day_key(&local);
+						schedule->catch_up_pending = false;
+						if (config.points[latest].minute_of_day == minute) {
+							schedule->last_run_day[latest] = local_day_key(&local);
+						}
 					}
 					xSemaphoreGive(schedule->lock);
 				}
+			} else if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+				if (schedule->config.generation == config.generation) {
+					schedule->catch_up_pending = false;
+				}
+				xSemaphoreGive(schedule->lock);
 			}
 		}
 
@@ -339,7 +348,6 @@ static void schedule_task(void *arg)
 			if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
 				if (schedule->config.generation == config.generation &&
 				    schedule->last_run_day[i] != day_key) {
-					schedule->last_run_day[i] = day_key;
 					execute = true;
 				}
 				xSemaphoreGive(schedule->lock);
@@ -351,6 +359,12 @@ static void schedule_task(void *arg)
 				ESP_LOGE(TAG, "point %u failed: %s", (unsigned)i,
 					 esp_err_to_name(err));
 			} else {
+				if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+					if (schedule->config.generation == config.generation) {
+						schedule->last_run_day[i] = day_key;
+					}
+					xSemaphoreGive(schedule->lock);
+				}
 				ESP_LOGI(TAG, "point %u applied action=%u", (unsigned)i,
 					 (unsigned)point->action);
 			}
