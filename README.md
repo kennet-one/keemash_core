@@ -37,6 +37,7 @@ builder channels are reserved but intentionally not implemented yet.
 - reusable timestamped UART log hook;
 - automatic TX broker packet-priority classification;
 - reusable single-root network policy for root, forwarding node and leaf roles.
+- reusable transactional weekly scheduling with NVS persistence and DST-safe execution.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
 reliability between a node and root; it does not add an application hop-by-hop
