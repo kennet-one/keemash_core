@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.8.1`.
+Latest stable release: `v0.8.2`.
 API compatibility level: `0.7.0` (`KEEMASH_MESH_CORE_VERSION == 0x00070000UL`).
 
 License: `Apache-2.0`.
@@ -38,6 +38,7 @@ builder channels are reserved but intentionally not implemented yet.
 - automatic TX broker packet-priority classification;
 - reusable single-root network policy for root, forwarding node and leaf roles.
 - reusable transactional weekly scheduling with NVS persistence and DST-safe execution.
+- clock-discontinuity recovery, crossed-minute execution and observable schedule retries.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
 reliability between a node and root; it does not add an application hop-by-hop
@@ -72,6 +73,11 @@ previous release maps the public forwarding-node role to ESP-IDF's pre-join
 `MESH_IDLE` designation. ESP-MESH changes it to runtime `MESH_NODE` after a
 successful self-organized join; assigning `MESH_NODE` before start is rejected
 with `ESP_ERR_MESH_ARGUMENT`.
+
+`v0.8.2` treats a clock-validity edge or discontinuity as a schedule catch-up,
+executes points crossed during bounded task delays and exposes local clock,
+retry and last-application diagnostics. Failed callbacks remain pending on a
+five-second retry cadence and are never marked complete before success.
 
 `v0.6.4` adds `keemash_mesh_apply_single_root_policy()`. It applies the same
 fixed-root setting to every participant, disables ESP-MESH's default allowance

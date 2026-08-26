@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "keemash_weekly_schedule.h"
+#include "keemash_mesh_time.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -24,6 +25,9 @@
 #define DEFAULT_TASK_PERIOD_MS 1000U
 #define DEFAULT_TASK_STACK_WORDS 3584U
 #define DEFAULT_TASK_PRIORITY 7U
+#define CLOCK_CONTINUITY_LIMIT_SEC 120U
+#define CLOCK_DRIFT_LIMIT_SEC 5U
+#define APPLY_RETRY_MS 5000U
 
 typedef struct __attribute__((packed)) {
 	uint16_t minute_of_day;
@@ -68,6 +72,18 @@ struct keemash_weekly_schedule {
 	schedule_stage_t stage;
 	uint32_t last_run_day[KEEMASH_WEEKLY_SCHEDULE_MAX_POINTS];
 	bool catch_up_pending;
+	bool last_clock_valid;
+	time_t last_wall_epoch;
+	uint32_t last_sample_ms;
+	bool retry_pending;
+	uint32_t retry_generation;
+	uint32_t retry_day_key;
+	uint32_t next_retry_ms;
+	uint8_t retry_index;
+	bool last_apply_valid;
+	uint8_t last_apply_index;
+	uint8_t last_apply_kind;
+	uint32_t last_apply_ms;
 	esp_err_t last_error;
 };
 
@@ -184,11 +200,14 @@ static uint32_t local_day_key(const struct tm *local)
 	       (uint32_t)local->tm_yday;
 }
 
-static bool clock_snapshot(struct tm *local)
+static bool clock_snapshot(struct tm *local, time_t *epoch)
 {
 	time_t now = time(NULL);
-	return now > (time_t)SCHEDULE_VALID_EPOCH &&
-	       localtime_r(&now, local) != NULL;
+	if (now <= (time_t)SCHEDULE_VALID_EPOCH || localtime_r(&now, local) == NULL) {
+		return false;
+	}
+	if (epoch) *epoch = now;
+	return true;
 }
 
 static schedule_blob_t config_to_blob(
@@ -287,11 +306,134 @@ static void expire_stage_locked(keemash_weekly_schedule_t *schedule,
 	}
 }
 
-static void record_error(keemash_weekly_schedule_t *schedule, esp_err_t error)
+static bool deadline_reached(uint32_t now, uint32_t deadline)
 {
-	if (xSemaphoreTake(schedule->lock, pdMS_TO_TICKS(50)) != pdTRUE) return;
+	return (int32_t)(now - deadline) >= 0;
+}
+
+static bool clock_is_continuous(time_t previous_epoch, time_t current_epoch,
+				uint32_t previous_ms, uint32_t current_ms)
+{
+	int64_t wall_delta = (int64_t)current_epoch - (int64_t)previous_epoch;
+	uint32_t monotonic_delta_ms = current_ms - previous_ms;
+	int64_t monotonic_delta = (int64_t)((monotonic_delta_ms + 500U) / 1000U);
+	int64_t drift = wall_delta - monotonic_delta;
+	if (drift < 0) drift = -drift;
+	return wall_delta >= 0 && wall_delta <= CLOCK_CONTINUITY_LIMIT_SEC &&
+	       drift <= CLOCK_DRIFT_LIMIT_SEC;
+}
+
+static void record_apply_result(keemash_weekly_schedule_t *schedule,
+				const keemash_weekly_schedule_config_t *config,
+				uint8_t index, bool catch_up, uint32_t day_key,
+				esp_err_t error, uint32_t now)
+{
+	if (xSemaphoreTake(schedule->lock, portMAX_DELAY) != pdTRUE) return;
+	if (schedule->config.generation != config->generation) {
+		xSemaphoreGive(schedule->lock);
+		return;
+	}
 	schedule->last_error = error;
+	if (error == ESP_OK) {
+		schedule->last_apply_valid = true;
+		schedule->last_apply_index = index;
+		schedule->last_apply_kind = catch_up ?
+			KEEMASH_WEEKLY_SCHEDULE_APPLY_CATCH_UP :
+			KEEMASH_WEEKLY_SCHEDULE_APPLY_SCHEDULED;
+		schedule->last_apply_ms = now;
+		schedule->next_retry_ms = 0;
+		if (catch_up) {
+			schedule->catch_up_pending = false;
+		} else {
+			schedule->last_run_day[index] = day_key;
+			schedule->retry_pending = false;
+		}
+	} else {
+		schedule->next_retry_ms = now + APPLY_RETRY_MS;
+		if (!catch_up) {
+			schedule->retry_pending = true;
+			schedule->retry_generation = config->generation;
+			schedule->retry_index = index;
+			schedule->retry_day_key = day_key;
+		}
+	}
 	xSemaphoreGive(schedule->lock);
+}
+
+static esp_err_t apply_point(keemash_weekly_schedule_t *schedule,
+			     const keemash_weekly_schedule_config_t *config,
+			     uint8_t index, bool catch_up, uint32_t day_key,
+			     uint32_t now)
+{
+	esp_err_t err = schedule->apply(schedule->user, &config->points[index],
+					index, catch_up);
+	record_apply_result(schedule, config, index, catch_up, day_key, err, now);
+	if (err != ESP_OK) {
+		ESP_LOGE(TAG, "%s point %u failed: %s",
+			 catch_up ? "catch-up" : "scheduled", (unsigned)index,
+			 esp_err_to_name(err));
+	}
+	return err;
+}
+
+static void run_scheduled_point(keemash_weekly_schedule_t *schedule,
+				const keemash_weekly_schedule_config_t *config,
+				uint8_t index, uint32_t day_key, uint32_t now)
+{
+	bool execute = false;
+	if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+		bool retry_wait = schedule->retry_pending &&
+			schedule->retry_generation == config->generation &&
+			schedule->retry_index == index &&
+			schedule->retry_day_key == day_key &&
+			!deadline_reached(now, schedule->next_retry_ms);
+		execute = schedule->config.generation == config->generation &&
+			schedule->last_run_day[index] != day_key && !retry_wait;
+		xSemaphoreGive(schedule->lock);
+	}
+	if (!execute) return;
+	if (apply_point(schedule, config, index, false, day_key, now) == ESP_OK) {
+		ESP_LOGI(TAG, "point %u applied action=%u", (unsigned)index,
+			 (unsigned)config->points[index].action);
+	}
+}
+
+static void run_points_for_minute(keemash_weekly_schedule_t *schedule,
+				  const keemash_weekly_schedule_config_t *config,
+				  const struct tm *local, uint32_t now)
+{
+	uint8_t weekday = weekday_index(local);
+	uint16_t minute = (uint16_t)(local->tm_hour * 60 + local->tm_min);
+	uint32_t day_key = local_day_key(local);
+	for (uint8_t i = 0; i < config->count; i++) {
+		const keemash_weekly_schedule_point_t *point = &config->points[i];
+		if (point_applies_on(point, weekday) && point->minute_of_day == minute) {
+			run_scheduled_point(schedule, config, i, day_key, now);
+		}
+	}
+}
+
+static void run_pending_retry(keemash_weekly_schedule_t *schedule,
+			      const keemash_weekly_schedule_config_t *config,
+			      uint32_t now)
+{
+	bool execute = false;
+	uint8_t index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
+	uint32_t day_key = 0;
+	if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+		if (schedule->retry_pending &&
+		    schedule->retry_generation == config->generation &&
+		    schedule->retry_index < config->count &&
+		    deadline_reached(now, schedule->next_retry_ms)) {
+			execute = true;
+			index = schedule->retry_index;
+			day_key = schedule->retry_day_key;
+		}
+		xSemaphoreGive(schedule->lock);
+	}
+	if (execute) {
+		(void)apply_point(schedule, config, index, false, day_key, now);
+	}
 }
 
 static void schedule_task(void *arg)
@@ -300,13 +442,34 @@ static void schedule_task(void *arg)
 	for (;;) {
 		vTaskDelay(pdMS_TO_TICKS(schedule->task_period_ms));
 		struct tm local = {0};
-		bool clock_valid = clock_snapshot(&local);
+		time_t epoch = 0;
+		uint32_t now = monotonic_ms();
+		bool clock_valid = clock_snapshot(&local, &epoch);
 		keemash_weekly_schedule_config_t config;
-		bool catch_up = false;
+		bool catch_up = false, continuous = false;
+		time_t previous_epoch = 0;
 		if (xSemaphoreTake(schedule->lock, portMAX_DELAY) != pdTRUE) continue;
-		expire_stage_locked(schedule, monotonic_ms());
+		expire_stage_locked(schedule, now);
 		config = schedule->config;
-		catch_up = schedule->catch_up_pending && config.enabled && clock_valid;
+		if (!clock_valid) {
+			schedule->last_clock_valid = false;
+		} else {
+			previous_epoch = schedule->last_wall_epoch;
+			continuous = schedule->last_clock_valid &&
+				clock_is_continuous(schedule->last_wall_epoch, epoch,
+						    schedule->last_sample_ms, now);
+			if (!schedule->last_clock_valid || !continuous) {
+				schedule->catch_up_pending = config.enabled;
+				schedule->retry_pending = false;
+				schedule->next_retry_ms = 0;
+			}
+			schedule->last_clock_valid = true;
+			schedule->last_wall_epoch = epoch;
+			schedule->last_sample_ms = now;
+		}
+		catch_up = schedule->catch_up_pending && config.enabled && clock_valid &&
+			(schedule->next_retry_ms == 0 ||
+			 deadline_reached(now, schedule->next_retry_ms));
 		if (catch_up && !schedule->catch_up_on_clock_ready) {
 			schedule->catch_up_pending = false;
 		}
@@ -318,57 +481,36 @@ static void schedule_task(void *arg)
 		if (catch_up && schedule->catch_up_on_clock_ready) {
 			uint8_t latest = latest_point_index(&config, weekday, minute);
 			if (latest != KEEMASH_WEEKLY_SCHEDULE_NO_INDEX) {
-				esp_err_t err = schedule->apply(schedule->user,
-					&config.points[latest], latest, true);
-				if (err != ESP_OK) {
-					record_error(schedule, err);
-				} else if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
+				esp_err_t err = apply_point(schedule, &config, latest, true,
+							local_day_key(&local), now);
+				if (err == ESP_OK && config.points[latest].minute_of_day == minute &&
+				    xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
 					if (schedule->config.generation == config.generation) {
-						schedule->catch_up_pending = false;
-						if (config.points[latest].minute_of_day == minute) {
-							schedule->last_run_day[latest] = local_day_key(&local);
-						}
+						schedule->last_run_day[latest] = local_day_key(&local);
 					}
 					xSemaphoreGive(schedule->lock);
 				}
 			} else if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
 				if (schedule->config.generation == config.generation) {
 					schedule->catch_up_pending = false;
+					schedule->next_retry_ms = 0;
 				}
 				xSemaphoreGive(schedule->lock);
 			}
 		}
+		run_pending_retry(schedule, &config, now);
 
-		uint32_t day_key = local_day_key(&local);
-		for (uint8_t i = 0; i < config.count; i++) {
-			const keemash_weekly_schedule_point_t *point = &config.points[i];
-			if (!point_applies_on(point, weekday) ||
-			    point->minute_of_day != minute) continue;
-			bool execute = false;
-			if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
-				if (schedule->config.generation == config.generation &&
-				    schedule->last_run_day[i] != day_key) {
-					execute = true;
+		if (continuous && previous_epoch < epoch) {
+			time_t boundary = ((previous_epoch / 60) + 1) * 60;
+			for (; boundary <= epoch; boundary += 60) {
+				struct tm crossed = {0};
+				if (localtime_r(&boundary, &crossed) != NULL) {
+					run_points_for_minute(schedule, &config, &crossed, now);
 				}
-				xSemaphoreGive(schedule->lock);
-			}
-			if (!execute) continue;
-			esp_err_t err = schedule->apply(schedule->user, point, i, false);
-			if (err != ESP_OK) {
-				record_error(schedule, err);
-				ESP_LOGE(TAG, "point %u failed: %s", (unsigned)i,
-					 esp_err_to_name(err));
-			} else {
-				if (xSemaphoreTake(schedule->lock, portMAX_DELAY) == pdTRUE) {
-					if (schedule->config.generation == config.generation) {
-						schedule->last_run_day[i] = day_key;
-					}
-					xSemaphoreGive(schedule->lock);
-				}
-				ESP_LOGI(TAG, "point %u applied action=%u", (unsigned)i,
-					 (unsigned)point->action);
 			}
 		}
+		// This also retries a failed point while its minute is still current.
+		run_points_for_minute(schedule, &config, &local, now);
 	}
 }
 
@@ -396,7 +538,12 @@ bool keemash_weekly_schedule_self_test(void)
 	config.points[0].days_mask = 1U << 0;
 	if (!config_valid(&schedule, &config)) return false;
 	config.points[0].action = 2;
-	return !config_valid(&schedule, &config);
+	if (config_valid(&schedule, &config)) return false;
+	if (!clock_is_continuous(1000, 1061, 1000, 62000) ||
+	    clock_is_continuous(1000, 1121, 1000, 122000) ||
+	    clock_is_continuous(1000, 995, 1000, 6000) ||
+	    clock_is_continuous(1000, 1070, 1000, 62000)) return false;
+	return true;
 }
 
 esp_err_t keemash_weekly_schedule_start(
@@ -438,6 +585,8 @@ esp_err_t keemash_weekly_schedule_start(
 		schedule->last_run_day[i] = UINT32_MAX;
 	}
 	schedule->catch_up_pending = schedule->config.enabled;
+	schedule->last_apply_index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
+	schedule->last_apply_kind = KEEMASH_WEEKLY_SCHEDULE_APPLY_NONE;
 	if (xTaskCreate(schedule_task, schedule->task_name,
 			schedule->task_stack_words, schedule,
 			schedule->task_priority, &schedule->task) != pdPASS) {
@@ -535,6 +684,11 @@ esp_err_t keemash_weekly_schedule_stage_commit(
 		schedule->last_run_day[i] = UINT32_MAX;
 	}
 	schedule->catch_up_pending = schedule->config.enabled;
+	schedule->retry_pending = false;
+	schedule->next_retry_ms = 0;
+	schedule->last_apply_valid = false;
+	schedule->last_apply_index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
+	schedule->last_apply_kind = KEEMASH_WEEKLY_SCHEDULE_APPLY_NONE;
 	schedule->last_error = ESP_OK;
 	xSemaphoreGive(schedule->lock);
 	return ESP_OK;
@@ -546,23 +700,42 @@ void keemash_weekly_schedule_get_status(
 {
 	if (!status) return;
 	memset(status, 0, sizeof(*status));
+	status->local_weekday = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
+	status->local_minute = UINT16_MAX;
 	status->active_index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
 	status->next_index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
 	status->next_in_minutes = UINT16_MAX;
+	status->last_apply_index = KEEMASH_WEEKLY_SCHEDULE_NO_INDEX;
+	status->last_apply_kind = KEEMASH_WEEKLY_SCHEDULE_APPLY_NONE;
+	status->last_apply_age_ms = UINT32_MAX;
+	status->time_sync_age_ms = UINT32_MAX;
 	if (!schedule ||
 	    xSemaphoreTake(schedule->lock, pdMS_TO_TICKS(100)) != pdTRUE) {
 		status->last_error = schedule ? ESP_ERR_TIMEOUT : ESP_ERR_INVALID_STATE;
 		return;
 	}
 	status->config = schedule->config;
+	status->catch_up_pending = schedule->catch_up_pending;
+	status->last_apply_valid = schedule->last_apply_valid;
+	status->last_apply_index = schedule->last_apply_index;
+	status->last_apply_kind = schedule->last_apply_kind;
+	status->last_apply_age_ms = schedule->last_apply_valid ?
+		monotonic_ms() - schedule->last_apply_ms : UINT32_MAX;
 	status->last_error = schedule->last_error;
 	xSemaphoreGive(schedule->lock);
 	struct tm local = {0};
-	status->clock_valid = clock_snapshot(&local);
+	status->clock_valid = clock_snapshot(&local, NULL);
+	keemash_mesh_time_status_t time_status = {0};
+	keemash_mesh_time_get_status(&time_status);
+	status->time_sync_age_ms = time_status.last_sync_age_ms;
+	if (status->clock_valid) {
+		status->local_weekday = weekday_index(&local);
+		status->local_minute = (uint16_t)(local.tm_hour * 60 + local.tm_min);
+	}
 	if (!status->clock_valid || !status->config.enabled) return;
-	uint8_t weekday = weekday_index(&local);
-	uint16_t minute = (uint16_t)(local.tm_hour * 60 + local.tm_min);
-	status->active_index = latest_point_index(&status->config, weekday, minute);
-	status->next_index = next_point_index(&status->config, weekday, minute,
+	status->active_index = latest_point_index(&status->config,
+		status->local_weekday, status->local_minute);
+	status->next_index = next_point_index(&status->config,
+		status->local_weekday, status->local_minute,
 					    &status->next_in_minutes);
 }

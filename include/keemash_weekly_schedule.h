@@ -14,6 +14,9 @@ extern "C" {
 #define KEEMASH_WEEKLY_SCHEDULE_MAX_POINTS 8U
 #define KEEMASH_WEEKLY_SCHEDULE_ALL_DAYS 0x7fU
 #define KEEMASH_WEEKLY_SCHEDULE_NO_INDEX 0xffU
+#define KEEMASH_WEEKLY_SCHEDULE_APPLY_NONE 0U
+#define KEEMASH_WEEKLY_SCHEDULE_APPLY_CATCH_UP 1U
+#define KEEMASH_WEEKLY_SCHEDULE_APPLY_SCHEDULED 2U
 
 typedef struct {
 	bool enabled;
@@ -33,9 +36,17 @@ typedef struct {
 typedef struct {
 	keemash_weekly_schedule_config_t config;
 	bool clock_valid;
+	bool catch_up_pending;
+	bool last_apply_valid;
+	uint8_t local_weekday;
+	uint16_t local_minute;
 	uint8_t active_index;
 	uint8_t next_index;
 	uint16_t next_in_minutes;
+	uint8_t last_apply_index;
+	uint8_t last_apply_kind;
+	uint32_t last_apply_age_ms;
+	uint32_t time_sync_age_ms;
 	esp_err_t last_error;
 } keemash_weekly_schedule_status_t;
 
