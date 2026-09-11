@@ -1,0 +1,258 @@
+// SPDX-License-Identifier: GPL-2.0-only
+syntax = "proto3";
+
+package keemash.fabric.v2;
+
+enum TrafficClass {
+  TRAFFIC_UNSPECIFIED = 0;
+  TRAFFIC_CONTROL = 1;
+  TRAFFIC_FAULT = 2;
+  TRAFFIC_GRAPH = 3;
+  TRAFFIC_TASK = 4;
+  TRAFFIC_MEMORY = 5;
+  TRAFFIC_STATE = 6;
+  TRAFFIC_SENSOR = 7;
+  TRAFFIC_LOG = 8;
+  TRAFFIC_OTA = 9;
+}
+
+enum DeliveryMode {
+  DELIVERY_UNSPECIFIED = 0;
+  DELIVERY_RELIABLE = 1;
+  DELIVERY_RELIABLE_LATEST = 2;
+  DELIVERY_LATEST = 3;
+  DELIVERY_SNAPSHOT = 4;
+}
+
+enum Validity {
+  VALIDITY_UNKNOWN = 0;
+  VALIDITY_VALID = 1;
+  VALIDITY_STALE = 2;
+  VALIDITY_INVALID = 3;
+  VALIDITY_UNAVAILABLE = 4;
+}
+
+enum EndpointDirection {
+  ENDPOINT_UNSPECIFIED = 0;
+  ENDPOINT_SOURCE = 1;
+  ENDPOINT_SINK = 2;
+  ENDPOINT_BIDIRECTIONAL = 3;
+}
+
+enum ValueType {
+  VALUE_UNSPECIFIED = 0;
+  VALUE_BOOL = 1;
+  VALUE_SINT64 = 2;
+  VALUE_DOUBLE = 3;
+  VALUE_STRING = 4;
+  VALUE_BYTES = 5;
+}
+
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_OK = 1;
+  OUTCOME_REJECTED = 2;
+  OUTCOME_FAILED = 3;
+  OUTCOME_TIMEOUT = 4;
+  OUTCOME_UNKNOWN = 5;
+}
+
+message Id128 {
+  fixed64 high = 1;
+  fixed64 low = 2;
+}
+
+message ResumeCursor {
+  TrafficClass traffic_class = 1;
+  fixed64 sequence = 2;
+}
+
+message Hello {
+  uint32 protocol_version = 1;
+  uint32 max_frame = 2;
+  fixed64 capabilities = 3;
+  Id128 controller_id = 4;
+  Id128 transport_session = 5;
+  fixed64 known_root_session = 6;
+  bytes manifest_digest = 7;
+  repeated ResumeCursor cursors = 8;
+  bool zero_rtt = 9;
+}
+
+message Welcome {
+  uint32 protocol_version = 1;
+  uint32 max_frame = 2;
+  fixed64 capabilities = 3;
+  Id128 transport_session = 4;
+  fixed64 root_session = 5;
+  bytes manifest_digest = 6;
+  bool resume_accepted = 7;
+  string fallback_reason = 8;
+}
+
+message NodeDescriptor {
+  Id128 node_id = 1;
+  bytes route_mac = 2;
+  string tag = 3;
+  fixed64 boot_session = 4;
+  string firmware_version = 5;
+  uint32 core_version = 6;
+  bytes manifest_digest = 7;
+  bool online = 8;
+}
+
+message EndpointDescriptor {
+  Id128 endpoint_id = 1;
+  Id128 node_id = 2;
+  string path = 3;
+  ValueType value_type = 4;
+  string unit = 5;
+  EndpointDirection direction = 6;
+  DeliveryMode delivery = 7;
+  uint32 permissions = 8;
+  uint32 min_period_ms = 9;
+  double deadband = 10;
+}
+
+message GraphEdge {
+  Id128 edge_id = 1;
+  Id128 source_endpoint_id = 2;
+  Id128 target_endpoint_id = 3;
+  DeliveryMode delivery = 4;
+  uint32 max_period_ms = 5;
+  double deadband = 6;
+  string transform = 7;
+  uint32 safety_owner = 8;
+}
+
+message GraphSnapshot {
+  fixed64 revision = 1;
+  bytes manifest_digest = 2;
+  repeated NodeDescriptor nodes = 3;
+  repeated EndpointDescriptor endpoints = 4;
+  repeated GraphEdge edges = 5;
+  uint32 page_index = 6;
+  uint32 page_count = 7;
+}
+
+message ControlRequest {
+  Id128 operation_id = 1;
+  Id128 target_node_id = 2;
+  Id128 endpoint_id = 3;
+  string command = 4;
+  bytes payload = 5;
+  bool read_only = 6;
+}
+
+message ControlResult {
+  Id128 operation_id = 1;
+  Outcome outcome = 2;
+  uint32 status = 3;
+  string text = 4;
+  uint32 handler_duration_us = 5;
+  bool duplicate = 6;
+}
+
+message TelemetrySample {
+  Id128 endpoint_id = 1;
+  fixed64 boot_session = 2;
+  fixed64 sample_sequence = 3;
+  fixed64 acquisition_mono_us = 4;
+  fixed64 wall_time_ms = 5;
+  Validity validity = 6;
+  uint32 quality_flags = 7;
+  oneof value {
+    bool bool_value = 8;
+    sint64 sint64_value = 9;
+    double double_value = 10;
+    string string_value = 11;
+    bytes bytes_value = 12;
+  }
+}
+
+message TaskEntry {
+  string name = 1;
+  uint32 runtime = 2;
+  uint32 stack_free_words = 3;
+  uint32 priority = 4;
+  uint32 state = 5;
+  uint32 core = 6;
+}
+
+message TaskSnapshot {
+  Id128 node_id = 1;
+  fixed64 boot_session = 2;
+  fixed64 acquisition_mono_us = 3;
+  uint32 total_runtime = 4;
+  uint32 actual_count = 5;
+  bool truncated = 6;
+  repeated TaskEntry tasks = 7;
+}
+
+message MemorySnapshot {
+  Id128 node_id = 1;
+  fixed64 boot_session = 2;
+  fixed64 acquisition_mono_us = 3;
+  uint32 internal_total = 4;
+  uint32 internal_free = 5;
+  uint32 internal_min_free = 6;
+  uint32 psram_total = 7;
+  uint32 psram_free = 8;
+  uint32 psram_min_free = 9;
+  uint32 flash_size = 10;
+  uint32 image_size = 11;
+  uint32 app_slot_size = 12;
+  uint32 nvs_used_entries = 13;
+  uint32 nvs_total_entries = 14;
+}
+
+message LogLine {
+  Id128 node_id = 1;
+  fixed64 boot_session = 2;
+  fixed64 line_sequence = 3;
+  fixed64 acquisition_mono_us = 4;
+  uint32 level = 5;
+  string text = 6;
+}
+
+message Gap {
+  TrafficClass traffic_class = 1;
+  fixed64 first_sequence = 2;
+  fixed64 last_sequence = 3;
+  string reason = 4;
+  bool snapshot_required = 5;
+}
+
+message Probe {
+  fixed64 nonce = 1;
+  fixed64 sender_mono_us = 2;
+  fixed64 receiver_mono_us = 3;
+  fixed64 reply_mono_us = 4;
+}
+
+message Envelope {
+  uint32 protocol_version = 1;
+  TrafficClass traffic_class = 2;
+  DeliveryMode delivery = 3;
+  fixed64 root_session = 4;
+  Id128 transport_session = 5;
+  Id128 source_node_id = 6;
+  Id128 target_node_id = 7;
+  Id128 operation_id = 8;
+  fixed64 sequence = 9;
+  fixed64 correlation = 10;
+  fixed64 graph_revision = 11;
+  oneof body {
+    Hello hello = 20;
+    Welcome welcome = 21;
+    GraphSnapshot graph = 22;
+    ControlRequest control_request = 23;
+    ControlResult control_result = 24;
+    TelemetrySample telemetry = 25;
+    TaskSnapshot tasks = 26;
+    MemorySnapshot memory = 27;
+    LogLine log = 28;
+    Gap gap = 29;
+    Probe probe = 30;
+  }
+}

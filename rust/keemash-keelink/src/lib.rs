@@ -1,4 +1,107 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+
+pub mod fabric {
+    include!(concat!(env!("OUT_DIR"), "/keemash.fabric.v2.rs"));
+}
+
+pub const FABRIC_VERSION: u32 = 2;
+pub const FABRIC_MAX_FRAME: usize = 4096;
+
+pub mod fabric_capability {
+    pub const TYPED_GRAPH: u64 = 1 << 0;
+    pub const RESUME: u64 = 1 << 1;
+    pub const OPERATION_ID: u64 = 1 << 2;
+    pub const LATEST_SENSOR: u64 = 1 << 3;
+    pub const QUIC_RESERVED: u64 = 1 << 4;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceDisposition {
+    First,
+    Next,
+    Duplicate,
+    Gap { first: u64, last: u64 },
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResumeCursors {
+    values: [Option<u64>; 10],
+}
+
+impl ResumeCursors {
+    pub fn observe(
+        &mut self,
+        traffic_class: fabric::TrafficClass,
+        sequence: u64,
+    ) -> SequenceDisposition {
+        let slot = traffic_class as usize;
+        if slot == 0 || slot >= self.values.len() {
+            return SequenceDisposition::Duplicate;
+        }
+        let Some(previous) = self.values[slot] else {
+            self.values[slot] = Some(sequence);
+            return SequenceDisposition::First;
+        };
+        if sequence == previous || !sequence_after(sequence, previous) {
+            return SequenceDisposition::Duplicate;
+        }
+        self.values[slot] = Some(sequence);
+        if sequence == previous.wrapping_add(1) {
+            SequenceDisposition::Next
+        } else {
+            SequenceDisposition::Gap {
+                first: previous.wrapping_add(1),
+                last: sequence.wrapping_sub(1),
+            }
+        }
+    }
+
+    pub fn get(&self, traffic_class: fabric::TrafficClass) -> Option<u64> {
+        self.values.get(traffic_class as usize).copied().flatten()
+    }
+
+    pub fn reset(&mut self) {
+        self.values.fill(None);
+    }
+}
+
+pub fn sequence_after(candidate: u64, reference: u64) -> bool {
+    candidate != reference && candidate.wrapping_sub(reference) as i64 > 0
+}
+
+pub fn uuid_to_id(value: uuid::Uuid) -> fabric::Id128 {
+    let bytes = value.as_bytes();
+    fabric::Id128 {
+        high: u64::from_be_bytes(bytes[..8].try_into().expect("UUID high half")),
+        low: u64::from_be_bytes(bytes[8..].try_into().expect("UUID low half")),
+    }
+}
+
+pub fn id_to_uuid(value: &fabric::Id128) -> uuid::Uuid {
+    let mut bytes = [0_u8; 16];
+    bytes[..8].copy_from_slice(&value.high.to_be_bytes());
+    bytes[8..].copy_from_slice(&value.low.to_be_bytes());
+    uuid::Uuid::from_bytes(bytes)
+}
+
+pub fn new_operation_id() -> fabric::Id128 {
+    uuid_to_id(uuid::Uuid::now_v7())
+}
+
+pub fn legacy_node_id(root_mac: [u8; 6], node_mac: [u8; 6]) -> fabric::Id128 {
+    const NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes([
+        0x1d, 0x79, 0x70, 0x79, 0x45, 0xa7, 0x57, 0xf5, 0xa5, 0x91, 0x31, 0x94, 0x3c, 0x7a, 0x68,
+        0x5c,
+    ]);
+    let mut name = [0_u8; 12];
+    name[..6].copy_from_slice(&root_mac);
+    name[6..].copy_from_slice(&node_mac);
+    uuid_to_id(uuid::Uuid::new_v5(&NAMESPACE, &name))
+}
+
+pub fn endpoint_id(node_id: &fabric::Id128, path: &str) -> fabric::Id128 {
+    uuid_to_id(uuid::Uuid::new_v5(&id_to_uuid(node_id), path.as_bytes()))
+}
 
 pub const VERSION: u8 = 1;
 pub const HEADER_SIZE: usize = 32;
@@ -225,5 +328,43 @@ mod tests {
         };
         assert!(Header::decode(&h.encode().unwrap()).is_err());
         assert!(TlvIter::new(&[1, 0, 6]).next().unwrap().is_err())
+    }
+
+    #[test]
+    fn stable_graph_identities_match_uuid_rules() {
+        let root = [0xb4, 0x3a, 0x45, 0xa7, 0x86, 0x8d];
+        let node = [0x08, 0xa6, 0xf7, 0x65, 0xce, 0xa0];
+        let first = legacy_node_id(root, node);
+        assert_eq!(first, legacy_node_id(root, node));
+        assert_ne!(first, legacy_node_id(root, [0; 6]));
+        assert_eq!(
+            endpoint_id(&first, "pump.status"),
+            endpoint_id(&first, "pump.status")
+        );
+        assert_ne!(
+            endpoint_id(&first, "pump.status"),
+            endpoint_id(&first, "pump.command")
+        );
+    }
+
+    #[test]
+    fn resume_cursors_are_wrap_safe_and_report_gaps() {
+        let mut cursors = ResumeCursors::default();
+        let class = fabric::TrafficClass::TrafficControl;
+        assert_eq!(cursors.observe(class, u64::MAX), SequenceDisposition::First);
+        assert_eq!(cursors.observe(class, 0), SequenceDisposition::Next);
+        assert_eq!(cursors.observe(class, 0), SequenceDisposition::Duplicate);
+        assert_eq!(
+            cursors.observe(class, 3),
+            SequenceDisposition::Gap { first: 1, last: 2 }
+        );
+    }
+
+    #[test]
+    fn operation_ids_are_nonzero_and_unique() {
+        let first = new_operation_id();
+        let second = new_operation_id();
+        assert_ne!(first, second);
+        assert_ne!(first.high | first.low, 0);
     }
 }

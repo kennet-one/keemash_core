@@ -11,7 +11,9 @@ idf_component_register(
          "keemash_mesh_event_outbox.c"
          "keemash_mesh_network.c"
          "keemash_keelink.c"
+         "keelink-fabric-v2.pb.c"
+         "keemash_fabric.c"
          "keemash_weekly_schedule.c"
-    INCLUDE_DIRS "include"
-    REQUIRES esp_system esp_timer log heap app_update esp_app_format spi_flash bootloader_support mbedtls nvs_flash esp_wifi
+    INCLUDE_DIRS "include" "."
+    REQUIRES esp_system esp_timer log heap app_update esp_app_format spi_flash bootloader_support mbedtls nvs_flash esp_wifi nanopb
 )

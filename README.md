@@ -5,14 +5,21 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.8.2`.
+Latest stable release: `v0.9.0`.
 API compatibility level: `0.7.0` (`KEEMASH_MESH_CORE_VERSION == 0x00070000UL`).
 
-License: `Apache-2.0`.
+License: `GPL-2.0-only`.
 
 KeeLink v1 adds the bounded app/root binary codec in ESP-IDF C and Rust. Its
 wire allocation is defined in `protocol/keelink-v1.json`; audio and visual
 builder channels are reserved but intentionally not implemented yet.
+
+KeeLink Fabric v2 adds a transport-independent Protocol Buffers envelope for
+low-latency WSS and experimental QUIC transports. The same schema is compiled
+with nanopb on ESP-IDF and prost in Rust. Stable 128-bit node, endpoint and
+operation identities form the compatibility boundary for the future visual
+constructor. Fabric v2 is negotiated; KeeLink v1 remains available during the
+canary and fleet migration.
 
 ## Scope
 
