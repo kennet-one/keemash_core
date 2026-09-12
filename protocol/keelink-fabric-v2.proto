@@ -168,6 +168,10 @@ message TelemetrySample {
     string string_value = 11;
     bytes bytes_value = 12;
   }
+  uint32 generation = 13;
+  uint32 request_id = 14;
+  uint32 metric_id = 15;
+  sint32 scale10 = 16;
 }
 
 message TaskEntry {
@@ -187,6 +191,12 @@ message TaskSnapshot {
   uint32 actual_count = 5;
   bool truncated = 6;
   repeated TaskEntry tasks = 7;
+  uint32 request_id = 8;
+  uint32 updated_ms = 9;
+  uint32 uptime_s = 10;
+  uint32 cpu_load_x10 = 11;
+  bool cpu_valid = 12;
+  uint32 task_index = 13;
 }
 
 message MemorySnapshot {
@@ -204,6 +214,10 @@ message MemorySnapshot {
   uint32 app_slot_size = 12;
   uint32 nvs_used_entries = 13;
   uint32 nvs_total_entries = 14;
+  uint32 uptime_s = 15;
+  uint32 psram_expected = 16;
+  uint32 nvs_free_entries = 17;
+  uint32 nvs_available_entries = 18;
 }
 
 message LogLine {

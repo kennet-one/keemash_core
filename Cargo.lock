@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "keemash-keelink"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "hex",
  "prost",

@@ -1,6 +1,6 @@
 [package]
 name = "keemash-keelink"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2021"
 license = "GPL-2.0-only"
 description = "KeeLink v1 and KeeLink Fabric v2 codecs for KeeMASH"
