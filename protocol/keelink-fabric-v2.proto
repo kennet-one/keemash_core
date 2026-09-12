@@ -181,6 +181,7 @@ message TaskEntry {
   uint32 priority = 4;
   uint32 state = 5;
   uint32 core = 6;
+  uint32 cpu_load_x10 = 7;
 }
 
 message TaskSnapshot {
@@ -218,6 +219,10 @@ message MemorySnapshot {
   uint32 psram_expected = 16;
   uint32 nvs_free_entries = 17;
   uint32 nvs_available_entries = 18;
+  uint32 heap_total = 19;
+  uint32 heap_free = 20;
+  uint32 heap_min_free = 21;
+  bool psram_enabled = 22;
 }
 
 message LogLine {

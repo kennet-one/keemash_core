@@ -215,6 +215,7 @@ typedef struct _keemash_fabric_v2_TaskEntry {
     uint32_t priority;
     uint32_t state;
     uint32_t core;
+    uint32_t cpu_load_x10;
 } keemash_fabric_v2_TaskEntry;
 
 typedef struct _keemash_fabric_v2_TaskSnapshot {
@@ -255,6 +256,10 @@ typedef struct _keemash_fabric_v2_MemorySnapshot {
     uint32_t psram_expected;
     uint32_t nvs_free_entries;
     uint32_t nvs_available_entries;
+    uint32_t heap_total;
+    uint32_t heap_free;
+    uint32_t heap_min_free;
+    bool psram_enabled;
 } keemash_fabric_v2_MemorySnapshot;
 
 typedef struct _keemash_fabric_v2_LogLine {
@@ -385,9 +390,9 @@ extern "C" {
 #define keemash_fabric_v2_ControlRequest_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, "", {0, {0}}, 0}
 #define keemash_fabric_v2_ControlResult_init_default {false, keemash_fabric_v2_Id128_init_default, _keemash_fabric_v2_Outcome_MIN, 0, "", 0, 0}
 #define keemash_fabric_v2_TelemetrySample_init_default {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, _keemash_fabric_v2_Validity_MIN, 0, 0, {0}, 0, 0, 0, 0}
-#define keemash_fabric_v2_TaskEntry_init_default {"", 0, 0, 0, 0, 0}
+#define keemash_fabric_v2_TaskEntry_init_default {"", 0, 0, 0, 0, 0, 0}
 #define keemash_fabric_v2_TaskSnapshot_init_default {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, 0, 0, {keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default, keemash_fabric_v2_TaskEntry_init_default}, 0, 0, 0, 0, 0, 0}
-#define keemash_fabric_v2_MemorySnapshot_init_default {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define keemash_fabric_v2_MemorySnapshot_init_default {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define keemash_fabric_v2_LogLine_init_default   {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_Gap_init_default       {_keemash_fabric_v2_TrafficClass_MIN, 0, 0, "", 0}
 #define keemash_fabric_v2_Probe_init_default     {0, 0, 0, 0}
@@ -403,9 +408,9 @@ extern "C" {
 #define keemash_fabric_v2_ControlRequest_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, "", {0, {0}}, 0}
 #define keemash_fabric_v2_ControlResult_init_zero {false, keemash_fabric_v2_Id128_init_zero, _keemash_fabric_v2_Outcome_MIN, 0, "", 0, 0}
 #define keemash_fabric_v2_TelemetrySample_init_zero {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, _keemash_fabric_v2_Validity_MIN, 0, 0, {0}, 0, 0, 0, 0}
-#define keemash_fabric_v2_TaskEntry_init_zero    {"", 0, 0, 0, 0, 0}
+#define keemash_fabric_v2_TaskEntry_init_zero    {"", 0, 0, 0, 0, 0, 0}
 #define keemash_fabric_v2_TaskSnapshot_init_zero {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, 0, 0, {keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero, keemash_fabric_v2_TaskEntry_init_zero}, 0, 0, 0, 0, 0, 0}
-#define keemash_fabric_v2_MemorySnapshot_init_zero {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define keemash_fabric_v2_MemorySnapshot_init_zero {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define keemash_fabric_v2_LogLine_init_zero      {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_Gap_init_zero          {_keemash_fabric_v2_TrafficClass_MIN, 0, 0, "", 0}
 #define keemash_fabric_v2_Probe_init_zero        {0, 0, 0, 0}
@@ -500,6 +505,7 @@ extern "C" {
 #define keemash_fabric_v2_TaskEntry_priority_tag 4
 #define keemash_fabric_v2_TaskEntry_state_tag    5
 #define keemash_fabric_v2_TaskEntry_core_tag     6
+#define keemash_fabric_v2_TaskEntry_cpu_load_x10_tag 7
 #define keemash_fabric_v2_TaskSnapshot_node_id_tag 1
 #define keemash_fabric_v2_TaskSnapshot_boot_session_tag 2
 #define keemash_fabric_v2_TaskSnapshot_acquisition_mono_us_tag 3
@@ -531,6 +537,10 @@ extern "C" {
 #define keemash_fabric_v2_MemorySnapshot_psram_expected_tag 16
 #define keemash_fabric_v2_MemorySnapshot_nvs_free_entries_tag 17
 #define keemash_fabric_v2_MemorySnapshot_nvs_available_entries_tag 18
+#define keemash_fabric_v2_MemorySnapshot_heap_total_tag 19
+#define keemash_fabric_v2_MemorySnapshot_heap_free_tag 20
+#define keemash_fabric_v2_MemorySnapshot_heap_min_free_tag 21
+#define keemash_fabric_v2_MemorySnapshot_psram_enabled_tag 22
 #define keemash_fabric_v2_LogLine_node_id_tag    1
 #define keemash_fabric_v2_LogLine_boot_session_tag 2
 #define keemash_fabric_v2_LogLine_line_sequence_tag 3
@@ -720,7 +730,8 @@ X(a, STATIC,   SINGULAR, UINT32,   runtime,           2) \
 X(a, STATIC,   SINGULAR, UINT32,   stack_free_words,   3) \
 X(a, STATIC,   SINGULAR, UINT32,   priority,          4) \
 X(a, STATIC,   SINGULAR, UINT32,   state,             5) \
-X(a, STATIC,   SINGULAR, UINT32,   core,              6)
+X(a, STATIC,   SINGULAR, UINT32,   core,              6) \
+X(a, STATIC,   SINGULAR, UINT32,   cpu_load_x10,      7)
 #define keemash_fabric_v2_TaskEntry_CALLBACK NULL
 #define keemash_fabric_v2_TaskEntry_DEFAULT NULL
 
@@ -761,7 +772,11 @@ X(a, STATIC,   SINGULAR, UINT32,   nvs_total_entries,  14) \
 X(a, STATIC,   SINGULAR, UINT32,   uptime_s,         15) \
 X(a, STATIC,   SINGULAR, UINT32,   psram_expected,   16) \
 X(a, STATIC,   SINGULAR, UINT32,   nvs_free_entries,  17) \
-X(a, STATIC,   SINGULAR, UINT32,   nvs_available_entries,  18)
+X(a, STATIC,   SINGULAR, UINT32,   nvs_available_entries,  18) \
+X(a, STATIC,   SINGULAR, UINT32,   heap_total,       19) \
+X(a, STATIC,   SINGULAR, UINT32,   heap_free,        20) \
+X(a, STATIC,   SINGULAR, UINT32,   heap_min_free,    21) \
+X(a, STATIC,   SINGULAR, BOOL,     psram_enabled,    22)
 #define keemash_fabric_v2_MemorySnapshot_CALLBACK NULL
 #define keemash_fabric_v2_MemorySnapshot_DEFAULT NULL
 #define keemash_fabric_v2_MemorySnapshot_node_id_MSGTYPE keemash_fabric_v2_Id128
@@ -879,19 +894,19 @@ extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 #define keemash_fabric_v2_ControlRequest_size    675
 #define keemash_fabric_v2_ControlResult_size     167
 #define keemash_fabric_v2_EndpointDescriptor_size 183
-#define keemash_fabric_v2_Envelope_size          3926
+#define keemash_fabric_v2_Envelope_size          4310
 #define keemash_fabric_v2_Gap_size               72
 #define keemash_fabric_v2_GraphEdge_size         181
 #define keemash_fabric_v2_GraphSnapshot_size     3615
 #define keemash_fabric_v2_Hello_size             223
 #define keemash_fabric_v2_Id128_size             18
 #define keemash_fabric_v2_LogLine_size           376
-#define keemash_fabric_v2_MemorySnapshot_size    131
+#define keemash_fabric_v2_MemorySnapshot_size    155
 #define keemash_fabric_v2_NodeDescriptor_size    147
 #define keemash_fabric_v2_Probe_size             36
 #define keemash_fabric_v2_ResumeCursor_size      11
-#define keemash_fabric_v2_TaskEntry_size         56
-#define keemash_fabric_v2_TaskSnapshot_size      3796
+#define keemash_fabric_v2_TaskEntry_size         62
+#define keemash_fabric_v2_TaskSnapshot_size      4180
 #define keemash_fabric_v2_TelemetrySample_size   348
 #define keemash_fabric_v2_Welcome_size           152
 
