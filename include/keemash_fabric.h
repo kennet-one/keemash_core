@@ -14,6 +14,9 @@ extern "C" {
 
 #define KEEMASH_FABRIC_VERSION 2U
 #define KEEMASH_FABRIC_MAX_FRAME 4096U
+#define KEEMASH_FABRIC_WIRE_PREFIX_SIZE 4U
+#define KEEMASH_FABRIC_MAX_WIRE_FRAME \
+	(KEEMASH_FABRIC_WIRE_PREFIX_SIZE + KEEMASH_FABRIC_MAX_FRAME)
 #define KEEMASH_FABRIC_CAP_TYPED_GRAPH (1ULL << 0)
 #define KEEMASH_FABRIC_CAP_RESUME (1ULL << 1)
 #define KEEMASH_FABRIC_CAP_OPERATION_ID (1ULL << 2)
@@ -27,6 +30,12 @@ esp_err_t keemash_fabric_encode(const keemash_fabric_envelope_t *message,
 				uint8_t *out, size_t capacity, size_t *written);
 esp_err_t keemash_fabric_decode(const uint8_t *data, size_t length,
 				keemash_fabric_envelope_t *message);
+esp_err_t keemash_fabric_encode_wire(const keemash_fabric_envelope_t *message,
+				     uint8_t *out, size_t capacity,
+				     size_t *written);
+esp_err_t keemash_fabric_decode_wire(const uint8_t *data, size_t length,
+				     keemash_fabric_envelope_t *message);
+bool keemash_fabric_is_wire_frame(const uint8_t *data, size_t length);
 esp_err_t keemash_fabric_validate(const keemash_fabric_envelope_t *message,
 				  bool allow_zero_rtt);
 

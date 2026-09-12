@@ -6,6 +6,49 @@ pub mod fabric {
 
 pub const FABRIC_VERSION: u32 = 2;
 pub const FABRIC_MAX_FRAME: usize = 4096;
+pub const FABRIC_WIRE_PREFIX: &[u8; 4] = b"KLF2";
+pub const FABRIC_MAX_WIRE_FRAME: usize = FABRIC_MAX_FRAME + FABRIC_WIRE_PREFIX.len();
+
+#[derive(Debug)]
+pub enum FabricDecodeError {
+    InvalidPrefix,
+    InvalidLength,
+    Protobuf(prost::DecodeError),
+}
+
+impl std::fmt::Display for FabricDecodeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidPrefix => formatter.write_str("invalid KeeLink Fabric prefix"),
+            Self::InvalidLength => formatter.write_str("invalid KeeLink Fabric frame length"),
+            Self::Protobuf(error) => write!(formatter, "invalid KeeLink Fabric protobuf: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for FabricDecodeError {}
+
+pub fn encode_fabric_wire(envelope: &fabric::Envelope) -> Vec<u8> {
+    use prost::Message;
+    let mut frame = Vec::with_capacity(FABRIC_WIRE_PREFIX.len() + envelope.encoded_len());
+    frame.extend_from_slice(FABRIC_WIRE_PREFIX);
+    envelope
+        .encode(&mut frame)
+        .expect("encoding into Vec cannot fail");
+    frame
+}
+
+pub fn decode_fabric_wire(frame: &[u8]) -> Result<fabric::Envelope, FabricDecodeError> {
+    use prost::Message;
+    if frame.len() <= FABRIC_WIRE_PREFIX.len() || frame.len() > FABRIC_MAX_WIRE_FRAME {
+        return Err(FabricDecodeError::InvalidLength);
+    }
+    if !frame.starts_with(FABRIC_WIRE_PREFIX) {
+        return Err(FabricDecodeError::InvalidPrefix);
+    }
+    fabric::Envelope::decode(&frame[FABRIC_WIRE_PREFIX.len()..])
+        .map_err(FabricDecodeError::Protobuf)
+}
 
 pub mod fabric_capability {
     pub const TYPED_GRAPH: u64 = 1 << 0;
@@ -358,6 +401,31 @@ mod tests {
             cursors.observe(class, 3),
             SequenceDisposition::Gap { first: 1, last: 2 }
         );
+    }
+
+    #[test]
+    fn fabric_wire_round_trip_rejects_legacy_and_oversized_frames() {
+        let envelope = fabric::Envelope {
+            protocol_version: FABRIC_VERSION,
+            traffic_class: fabric::TrafficClass::TrafficGraph as i32,
+            delivery: fabric::DeliveryMode::DeliveryReliable as i32,
+            body: Some(fabric::envelope::Body::Hello(fabric::Hello {
+                protocol_version: FABRIC_VERSION,
+                max_frame: FABRIC_MAX_FRAME as u32,
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let wire = encode_fabric_wire(&envelope);
+        assert_eq!(decode_fabric_wire(&wire).unwrap(), envelope);
+        assert!(matches!(
+            decode_fabric_wire(b"KLNKlegacy"),
+            Err(FabricDecodeError::InvalidPrefix)
+        ));
+        assert!(matches!(
+            decode_fabric_wire(&vec![0_u8; FABRIC_MAX_WIRE_FRAME + 1]),
+            Err(FabricDecodeError::InvalidLength)
+        ));
     }
 
     #[test]

@@ -12,6 +12,9 @@ static const uint8_t s_legacy_namespace[16] = {
 	0x1d, 0x79, 0x70, 0x79, 0x45, 0xa7, 0x57, 0xf5,
 	0xa5, 0x91, 0x31, 0x94, 0x3c, 0x7a, 0x68, 0x5c,
 };
+static const uint8_t s_wire_prefix[KEEMASH_FABRIC_WIRE_PREFIX_SIZE] = {
+	'K', 'L', 'F', '2',
+};
 
 static uint64_t load_be64(const uint8_t *value)
 {
@@ -55,6 +58,43 @@ esp_err_t keemash_fabric_decode(const uint8_t *data, size_t length,
 		return ESP_ERR_INVALID_RESPONSE;
 	}
 	return keemash_fabric_validate(message, false);
+}
+
+bool keemash_fabric_is_wire_frame(const uint8_t *data, size_t length)
+{
+	return data && length >= KEEMASH_FABRIC_WIRE_PREFIX_SIZE &&
+		memcmp(data, s_wire_prefix, sizeof(s_wire_prefix)) == 0;
+}
+
+esp_err_t keemash_fabric_encode_wire(const keemash_fabric_envelope_t *message,
+				     uint8_t *out, size_t capacity,
+				     size_t *written)
+{
+	if (!message || !out || !written ||
+	    capacity < KEEMASH_FABRIC_WIRE_PREFIX_SIZE ||
+	    capacity > KEEMASH_FABRIC_MAX_WIRE_FRAME) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	memcpy(out, s_wire_prefix, sizeof(s_wire_prefix));
+	size_t payload_len = 0;
+	esp_err_t err = keemash_fabric_encode(message,
+		out + KEEMASH_FABRIC_WIRE_PREFIX_SIZE,
+		capacity - KEEMASH_FABRIC_WIRE_PREFIX_SIZE, &payload_len);
+	if (err != ESP_OK) return err;
+	*written = KEEMASH_FABRIC_WIRE_PREFIX_SIZE + payload_len;
+	return ESP_OK;
+}
+
+esp_err_t keemash_fabric_decode_wire(const uint8_t *data, size_t length,
+				     keemash_fabric_envelope_t *message)
+{
+	if (!keemash_fabric_is_wire_frame(data, length) ||
+	    length == KEEMASH_FABRIC_WIRE_PREFIX_SIZE ||
+	    length > KEEMASH_FABRIC_MAX_WIRE_FRAME) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	return keemash_fabric_decode(data + KEEMASH_FABRIC_WIRE_PREFIX_SIZE,
+		length - KEEMASH_FABRIC_WIRE_PREFIX_SIZE, message);
 }
 
 esp_err_t keemash_fabric_validate(const keemash_fabric_envelope_t *message,

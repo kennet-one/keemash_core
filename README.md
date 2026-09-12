@@ -5,7 +5,7 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.9.0`.
+Latest stable release: `v0.9.1`.
 API compatibility level: `0.7.0` (`KEEMASH_MESH_CORE_VERSION == 0x00070000UL`).
 
 License: `GPL-2.0-only`.
