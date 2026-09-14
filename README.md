@@ -5,8 +5,8 @@ ESP-MESH.
 
 Repository: `kennet-one/keemash_core`.
 
-Latest stable release: `v0.9.3`.
-API compatibility level: `0.7.0` (`KEEMASH_MESH_CORE_VERSION == 0x00070000UL`).
+Latest stable release: `v0.9.4`.
+API compatibility level: `0.9.4` (`KEEMASH_MESH_CORE_VERSION == 0x00090400UL`).
 
 License: `GPL-2.0-only`.
 
@@ -46,6 +46,7 @@ canary and fleet migration.
 - reusable single-root network policy for root, forwarding node and leaf roles.
 - reusable transactional weekly scheduling with NVS persistence and DST-safe execution.
 - clock-discontinuity recovery, crossed-minute execution and observable schedule retries.
+- end-to-end CONTROL operation identity with node-side duplicate suppression.
 
 ESP-MESH remains responsible for multi-hop routing. The core provides end-to-end
 reliability between a node and root; it does not add an application hop-by-hop
@@ -64,12 +65,12 @@ Consumers must pin a stable release tag and verify `KEEMASH_MESH_CORE_VERSION`
 as the compile-time API compatibility level:
 
 ```c
-#if KEEMASH_MESH_CORE_VERSION != 0x00070000UL
-#error "firmware requires keemash_mesh_core 0.7.0"
+#if KEEMASH_MESH_CORE_VERSION < 0x00090400UL
+#error "firmware requires keemash_mesh_core 0.9.4 or newer"
 #endif
 ```
 
-Use a fixed tag such as `v0.6.0` when integrating the component into node
+Use a fixed tag such as `v0.9.4` when integrating the component into node
 firmware repositories. New migrations should target the latest stable release
 unless a node-specific compatibility check requires an older pin.
 
@@ -85,6 +86,12 @@ with `ESP_ERR_MESH_ARGUMENT`.
 executes points crossed during bounded task delays and exposes local clock,
 retry and last-application diagnostics. Failed callbacks remain pending on a
 five-second retry cadence and are never marked complete before success.
+
+`v0.9.4` carries a controller-scoped 128-bit operation identity through typed
+mesh CONTROL packets. The node command-result cache keys operation-aware
+commands by that identity, so reconnect retransmission can return a cached
+result without repeating the hardware action. Peers negotiate this behavior
+with `MESH_V2_CAP_OPERATION_ID`; malformed flagged payloads fail closed.
 
 `v0.6.4` adds `keemash_mesh_apply_single_root_policy()`. It applies the same
 fixed-root setting to every participant, disables ESP-MESH's default allowance
@@ -156,10 +163,10 @@ that does require a coordinated node upgrade.
 
 | Consumer | Core pin | Guidance |
 | --- | --- | --- |
-| `node0` | `v0.7.0` | Current root release with KeeLink v1, active ping and enforced single-root policy. |
-| `kPowerLed` | `v0.5.5` | Current validated node consumer. |
-| `choinka` | `v0.5.5` | Current validated node consumer. |
-| `humidifier` | `v0.5.9` | Current hardened node consumer with immediate root-session resync. |
+| `node0` | `v0.9.4` | Fabric v2 root with controller-scoped CONTROL operation identity. |
+| `Kheater` | `v0.9.4` | Fabric canary with operation-aware command dedupe. |
+| `choinka` | `v0.9.4` | Fabric canary with operation-aware command dedupe. |
+| Other core-backed nodes | existing validated pin | Upgrade in each node-specific task. |
 | Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults

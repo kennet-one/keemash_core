@@ -13,6 +13,27 @@
 #define KM_MESSAGE_MAX		(MESH_V2_RELIABLE_INNER_MAX * MESH_V2_RELIABLE_MAX_FRAGMENTS)
 #define KM_PENDING_LOST_RANGES	8
 
+size_t keemash_mesh_control_payload_size(uint8_t text_len, bool has_operation_id)
+{
+	if (text_len > MESH_V2_CONTROL_TEXT_MAX) return 0;
+	return offsetof(mesh_v2_control_payload_t, text) + text_len +
+		(has_operation_id ? sizeof(mesh_v2_operation_id_t) : 0U);
+}
+
+bool keemash_mesh_control_get_operation_id(const void *payload, size_t payload_len,
+					   mesh_v2_operation_id_t *operation_id)
+{
+	if (!payload || !operation_id ||
+	    payload_len < offsetof(mesh_v2_control_payload_t, text)) return false;
+	const mesh_v2_control_payload_t *control = payload;
+	if (!(control->rsv & MESH_V2_CONTROL_FLAG_OPERATION_ID) ||
+	    control->text_len > MESH_V2_CONTROL_TEXT_MAX) return false;
+	size_t base = keemash_mesh_control_payload_size(control->text_len, false);
+	if (base == 0 || payload_len < base + sizeof(*operation_id)) return false;
+	memcpy(operation_id, (const uint8_t *)payload + base, sizeof(*operation_id));
+	return operation_id->high != 0 || operation_id->low != 0;
+}
+
 typedef struct {
 	bool used;
 	uint8_t peer[6];

@@ -38,6 +38,10 @@ void keemash_mesh_root_on_control(const uint8_t peer[6], uint32_t root_session,
 				  uint32_t node_session, uint8_t kind,
 				  uint32_t command_id, uint8_t status,
 				  const char *text);
+void keemash_mesh_root_on_control_ex(
+	const uint8_t peer[6], uint32_t root_session, uint32_t node_session,
+	uint8_t kind, uint32_t command_id, uint8_t status, const char *text,
+	const mesh_v2_operation_id_t *operation_id);
 void keemash_mesh_root_on_state_changed(void);
 
 // Node application hooks. Default weak implementations keep unsupported behavior safe.

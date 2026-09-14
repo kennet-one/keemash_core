@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define KEEMASH_MESH_CORE_VERSION	0x00070000UL
+#define KEEMASH_MESH_CORE_VERSION	0x00090400UL
 
 #define MESH_PKT_MAGIC			0xA5
 #define MESH_PKT_VERSION		1
@@ -107,6 +109,7 @@ extern "C" {
 #define MESH_V2_CAP_TYPED_TIME		0x00000200UL
 #define MESH_V2_CAP_TYPED_SENSOR		0x00000400UL
 #define MESH_V2_CAP_ACTIVE_PING		0x00000800UL
+#define MESH_V2_CAP_OPERATION_ID		0x00001000UL
 
 #define MESH_V2_RELIABLE_PROFILE_VERSION	1
 #define MESH_V2_RELIABLE_WINDOW		32
@@ -133,6 +136,7 @@ extern "C" {
 #define MESH_V2_CONTROL_STATUS_UNSUPPORTED	1
 #define MESH_V2_CONTROL_STATUS_FAILED	2
 #define MESH_V2_CONTROL_TEXT_MAX	128
+#define MESH_V2_CONTROL_FLAG_OPERATION_ID	0x01U
 
 #define MESH_V2_OTA_OP_PREPARE		1
 #define MESH_V2_OTA_OP_DATA		2
@@ -590,6 +594,15 @@ typedef struct __attribute__((packed)) {
 } mesh_v2_control_payload_t;
 
 typedef struct __attribute__((packed)) {
+	uint64_t	high;
+	uint64_t	low;
+} mesh_v2_operation_id_t;
+
+size_t keemash_mesh_control_payload_size(uint8_t text_len, bool has_operation_id);
+bool keemash_mesh_control_get_operation_id(const void *payload, size_t payload_len,
+					   mesh_v2_operation_id_t *operation_id);
+
+typedef struct __attribute__((packed)) {
 	int64_t		epoch_sec;
 	uint32_t	generation;
 	uint32_t	source_uptime_s;
@@ -681,6 +694,10 @@ _Static_assert(sizeof(mesh_v2_hdr_t) + sizeof(mesh_v2_reliable_hdr_t) +
 	       "reliable packet exceeds MESH_V2_PACKET_MAX");
 _Static_assert(sizeof(mesh_v2_control_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "control payload unexpectedly requires fragmentation");
+_Static_assert(offsetof(mesh_v2_control_payload_t, text) +
+		       MESH_V2_CONTROL_TEXT_MAX + sizeof(mesh_v2_operation_id_t) <=
+		       MESH_V2_RELIABLE_INNER_MAX,
+	       "operation-aware control payload exceeds reliable inner capacity");
 _Static_assert(sizeof(mesh_v2_memory_payload_t) <= MESH_V2_RELIABLE_INNER_MAX,
 	       "memory payload unexpectedly requires fragmentation");
 _Static_assert(sizeof(mesh_v2_sensor_entry_t) == 8,

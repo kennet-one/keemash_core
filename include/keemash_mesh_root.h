@@ -25,6 +25,8 @@ typedef struct {
 	char text[64];
 	char first_text[64];
 	bool text_changed;
+	bool has_operation_id;
+	mesh_v2_operation_id_t operation_id;
 } mesh_v2_command_result_t;
 typedef struct {
 	bool seen;
@@ -73,10 +75,16 @@ esp_err_t mesh_v2_root_send_ota_payload(const uint8_t mac[6],
                                         size_t payload_len);
 esp_err_t mesh_v2_root_send_command(const uint8_t mac[6], uint32_t command_id,
 				    const char *command);
+esp_err_t mesh_v2_root_send_command_operation(
+	const uint8_t mac[6], uint32_t command_id, const char *command,
+	const mesh_v2_operation_id_t *operation_id);
 bool mesh_v2_root_command_result(uint32_t command_id,
 					 mesh_v2_command_result_t *out);
 bool mesh_v2_root_command_result_for_peer(const uint8_t mac[6], uint32_t command_id,
 					  mesh_v2_command_result_t *out);
+bool mesh_v2_root_command_result_for_operation(
+	const uint8_t mac[6], const mesh_v2_operation_id_t *operation_id,
+	mesh_v2_command_result_t *out);
 uint32_t mesh_v2_root_next_command_id(void);
 bool mesh_v2_root_find_ready_by_tag(const char *tag, uint8_t mac[6]);
 bool mesh_v2_root_find_lossless_by_tag(const char *tag, uint8_t mac[6],

@@ -90,6 +90,8 @@ typedef struct {
 	uint32_t root_session_id;
 	uint32_t node_session_id;
 	uint32_t command_id;
+	bool has_operation_id;
+	mesh_v2_operation_id_t operation_id;
 	uint8_t status;
 	uint32_t seen_count;
 	uint32_t updated_ms;
@@ -150,7 +152,14 @@ static esp_err_t rel_send_cb(void *user, const uint8_t dst[6],
 	return keemash_mesh_transport_send(dst, packet, packet_len);
 }
 
+static bool operation_id_eq(const mesh_v2_operation_id_t *a,
+			    const mesh_v2_operation_id_t *b)
+{
+	return a && b && a->high == b->high && a->low == b->low;
+}
+
 static void note_command_result(const uint8_t peer[6], uint32_t command_id,
+				const mesh_v2_operation_id_t *operation_id,
 				uint8_t status, const char *text)
 {
 	uint32_t now = ms_now();
@@ -165,12 +174,20 @@ static void note_command_result(const uint8_t peer[6], uint32_t command_id,
 	portENTER_CRITICAL(&s_lock);
 	command_result_slot_t *slot = NULL;
 	for (uint8_t i = 0; i < COMMAND_RESULT_CACHE_SIZE; i++) {
-		if (s_command_results[i].used &&
-		    s_command_results[i].command_id == command_id &&
-		    mac_eq(s_command_results[i].peer, peer) &&
-		    (!have_rel ||
-		     (s_command_results[i].root_session_id == rel.root_session_id &&
-		      s_command_results[i].node_session_id == rel.node_session_id))) {
+		if (!s_command_results[i].used ||
+		    !mac_eq(s_command_results[i].peer, peer) ||
+		    (have_rel &&
+		     (s_command_results[i].root_session_id != rel.root_session_id ||
+		      s_command_results[i].node_session_id != rel.node_session_id))) {
+			continue;
+		}
+		bool identity_matches = operation_id
+			? s_command_results[i].has_operation_id &&
+			  operation_id_eq(&s_command_results[i].operation_id,
+					  operation_id)
+			: !s_command_results[i].has_operation_id &&
+			  s_command_results[i].command_id == command_id;
+		if (identity_matches) {
 			slot = &s_command_results[i];
 			break;
 		}
@@ -181,6 +198,8 @@ static void note_command_result(const uint8_t peer[6], uint32_t command_id,
 		slot->used = true;
 		mac_copy(slot->peer, peer);
 		slot->command_id = command_id;
+		slot->has_operation_id = operation_id != NULL;
+		if (operation_id) slot->operation_id = *operation_id;
 		if (have_rel) {
 			slot->root_session_id = rel.root_session_id;
 			slot->node_session_id = rel.node_session_id;
@@ -190,6 +209,7 @@ static void note_command_result(const uint8_t peer[6], uint32_t command_id,
 	} else if (strcmp(slot->text, new_text) != 0) {
 		slot->text_changed = true;
 	}
+	slot->command_id = command_id;
 	slot->status = status;
 	slot->seen_count++;
 	slot->updated_ms = now;
@@ -262,15 +282,25 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 			text[n] = '\0';
 			keemash_rel_stats_t rel = {0};
 			(void)current_rel_stats(peer, &rel);
+			mesh_v2_operation_id_t operation_id = {0};
+			bool has_operation_id = keemash_mesh_control_get_operation_id(
+				payload, payload_len, &operation_id);
+			if ((p->rsv & MESH_V2_CONTROL_FLAG_OPERATION_ID) &&
+			    !has_operation_id) {
+				return;
+			}
+			const mesh_v2_operation_id_t *operation =
+				has_operation_id ? &operation_id : NULL;
 			if (p->kind == MESH_V2_CONTROL_RESULT) {
-				note_command_result(peer, p->command_id, p->status, text);
+				note_command_result(peer, p->command_id, operation,
+						    p->status, text);
 				ESP_LOGI(TAG, "command result id=%lu status=%u text=%s",
 				         (unsigned long)p->command_id,
 				         (unsigned)p->status, text);
 			}
-			keemash_mesh_root_on_control(peer, rel.root_session_id,
+			keemash_mesh_root_on_control_ex(peer, rel.root_session_id,
 				rel.node_session_id, p->kind, p->command_id,
-				p->status, text);
+				p->status, text, operation);
 		}
 	}
 }
@@ -1520,21 +1550,47 @@ esp_err_t mesh_v2_root_send_ota_payload(const uint8_t mac[6],
 esp_err_t mesh_v2_root_send_command(const uint8_t mac[6], uint32_t command_id,
 				    const char *command)
 {
+	return mesh_v2_root_send_command_operation(mac, command_id, command, NULL);
+}
+
+esp_err_t mesh_v2_root_send_command_operation(
+	const uint8_t mac[6], uint32_t command_id, const char *command,
+	const mesh_v2_operation_id_t *operation_id)
+{
 	if (!mac || !command || !command[0]) return ESP_ERR_INVALID_ARG;
 	size_t len = strnlen(command, MESH_V2_CONTROL_TEXT_MAX);
 	if (len == 0 || len >= MESH_V2_CONTROL_TEXT_MAX) return ESP_ERR_INVALID_SIZE;
+	if (operation_id && operation_id->high == 0 && operation_id->low == 0) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	if (operation_id &&
+	    !mesh_v2_root_peer_advertises_lossless(mac,
+						  MESH_V2_CAP_OPERATION_ID)) {
+		return ESP_ERR_NOT_SUPPORTED;
+	}
 	if (!s_rel || !s_rel_lock) return ESP_ERR_INVALID_STATE;
 	if (xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(500)) != pdTRUE) {
 		return ESP_ERR_TIMEOUT;
 	}
-	mesh_v2_control_payload_t payload = {0};
-	payload.kind = MESH_V2_CONTROL_COMMAND;
-	payload.command_id = command_id;
-	payload.text_len = (uint8_t)len;
-	memcpy(payload.text, command, len);
+	uint8_t wire[MESH_V2_RELIABLE_INNER_MAX] = {0};
+	mesh_v2_control_payload_t *payload = (mesh_v2_control_payload_t *)wire;
+	payload->kind = MESH_V2_CONTROL_COMMAND;
+	payload->command_id = command_id;
+	payload->text_len = (uint8_t)len;
+	memcpy(payload->text, command, len);
+	size_t payload_len = keemash_mesh_control_payload_size(
+		payload->text_len, operation_id != NULL);
+	if (payload_len == 0 || payload_len > sizeof(wire)) {
+		xSemaphoreGiveRecursive(s_rel_lock);
+		return ESP_ERR_INVALID_SIZE;
+	}
+	if (operation_id) {
+		payload->rsv |= MESH_V2_CONTROL_FLAG_OPERATION_ID;
+		memcpy(wire + payload_len - sizeof(*operation_id), operation_id,
+		       sizeof(*operation_id));
+	}
 	esp_err_t err = keemash_rel_send(s_rel, mac,
-		MESH_V2_TUNNEL_CHANNEL_CONTROL, &payload,
-		offsetof(mesh_v2_control_payload_t, text) + len,
+		MESH_V2_TUNNEL_CHANNEL_CONTROL, wire, payload_len,
 		KEEMASH_REL_PRIORITY_CONTROL);
 	xSemaphoreGiveRecursive(s_rel_lock);
 	return err;
@@ -1555,6 +1611,8 @@ static void copy_command_result(const command_result_slot_t *slot,
 	strncpy(out->text, slot->text, sizeof(out->text) - 1);
 	strncpy(out->first_text, slot->first_text, sizeof(out->first_text) - 1);
 	out->text_changed = slot->text_changed;
+	out->has_operation_id = slot->has_operation_id;
+	out->operation_id = slot->operation_id;
 }
 
 bool mesh_v2_root_command_result_for_peer(const uint8_t mac[6], uint32_t command_id,
@@ -1588,6 +1646,31 @@ bool mesh_v2_root_command_result(uint32_t command_id,
 	for (uint8_t i = 0; i < COMMAND_RESULT_CACHE_SIZE; i++) {
 		const command_result_slot_t *slot = &s_command_results[i];
 		if (!slot->used || slot->command_id != command_id) continue;
+		copy_command_result(slot, out);
+		break;
+	}
+	portEXIT_CRITICAL(&s_lock);
+	return out->seen;
+}
+
+bool mesh_v2_root_command_result_for_operation(
+	const uint8_t mac[6], const mesh_v2_operation_id_t *operation_id,
+	mesh_v2_command_result_t *out)
+{
+	if (!mac || !operation_id || !out ||
+	    (operation_id->high == 0 && operation_id->low == 0)) return false;
+	memset(out, 0, sizeof(*out));
+	keemash_rel_stats_t rel = {0};
+	bool have_rel = current_rel_stats(mac, &rel);
+	portENTER_CRITICAL(&s_lock);
+	for (uint8_t i = 0; i < COMMAND_RESULT_CACHE_SIZE; i++) {
+		const command_result_slot_t *slot = &s_command_results[i];
+		if (!slot->used || !slot->has_operation_id ||
+		    !operation_id_eq(&slot->operation_id, operation_id) ||
+		    !mac_eq(slot->peer, mac) ||
+		    (have_rel &&
+		     (slot->root_session_id != rel.root_session_id ||
+		      slot->node_session_id != rel.node_session_id))) continue;
 		copy_command_result(slot, out);
 		break;
 	}

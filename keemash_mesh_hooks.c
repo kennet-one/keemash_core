@@ -83,6 +83,16 @@ void __attribute__((weak)) keemash_mesh_root_on_control(const uint8_t peer[6],
     if (kind == MESH_V2_CONTROL_EVENT) keemash_mesh_root_on_control_event(text);
 }
 
+void __attribute__((weak)) keemash_mesh_root_on_control_ex(
+    const uint8_t peer[6], uint32_t root_session, uint32_t node_session,
+    uint8_t kind, uint32_t command_id, uint8_t status, const char *text,
+    const mesh_v2_operation_id_t *operation_id)
+{
+    (void)operation_id;
+    keemash_mesh_root_on_control(peer, root_session, node_session, kind,
+                                 command_id, status, text);
+}
+
 void __attribute__((weak)) keemash_mesh_root_on_state_changed(void)
 {
 }

@@ -122,6 +122,8 @@ static bool s_task_cpu_baseline_valid = false;
 typedef struct {
 	bool used;
 	uint32_t command_id;
+	bool has_operation_id;
+	mesh_v2_operation_id_t operation_id;
 	uint8_t status;
 	char result[48];
 } command_cache_t;
@@ -141,7 +143,8 @@ static uint32_t node_capabilities(void)
 {
 	uint32_t caps = MESH_V2_CAP_TOPOLOGY | MESH_V2_CAP_TYPED_CONTROL |
 			MESH_V2_CAP_TYPED_MEMORY | MESH_V2_CAP_OTA |
-			MESH_V2_CAP_TYPED_TIME | MESH_V2_CAP_ACTIVE_PING;
+			MESH_V2_CAP_TYPED_TIME | MESH_V2_CAP_ACTIVE_PING |
+			MESH_V2_CAP_OPERATION_ID;
 	caps |= s_app_capabilities;
 #if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	caps |= MESH_V2_CAP_TUNNEL;
@@ -172,36 +175,61 @@ static esp_err_t rel_send_cb(void *user, const uint8_t dst[6],
 }
 
 static esp_err_t rel_send_control(uint8_t kind, uint32_t command_id,
-				  uint8_t status, const char *text)
+				  uint8_t status, const char *text,
+				  const mesh_v2_operation_id_t *operation_id)
 {
 	if (!s_rel || !s_rel_lock) return ESP_ERR_INVALID_STATE;
-	mesh_v2_control_payload_t result = {0};
-	result.kind = kind;
-	result.status = status;
-	result.command_id = command_id;
+	uint8_t wire[MESH_V2_RELIABLE_INNER_MAX] = {0};
+	mesh_v2_control_payload_t *result = (mesh_v2_control_payload_t *)wire;
+	result->kind = kind;
+	result->status = status;
+	result->command_id = command_id;
 	if (text) {
-		size_t n = strnlen(text, sizeof(result.text));
-		if (n > sizeof(result.text)) n = sizeof(result.text);
-		result.text_len = (uint8_t)n;
-		memcpy(result.text, text, n);
+		size_t n = strnlen(text, sizeof(result->text));
+		if (n > sizeof(result->text)) n = sizeof(result->text);
+		result->text_len = (uint8_t)n;
+		memcpy(result->text, text, n);
+	}
+	bool has_operation_id = operation_id &&
+		(operation_id->high != 0 || operation_id->low != 0);
+	size_t payload_len = keemash_mesh_control_payload_size(
+		result->text_len, has_operation_id);
+	if (payload_len == 0 || payload_len > sizeof(wire)) return ESP_ERR_INVALID_SIZE;
+	if (has_operation_id) {
+		result->rsv |= MESH_V2_CONTROL_FLAG_OPERATION_ID;
+		memcpy(wire + payload_len - sizeof(*operation_id), operation_id,
+		       sizeof(*operation_id));
 	}
 	const uint8_t root[6] = {0};
 	return keemash_rel_send(s_rel, root, MESH_V2_TUNNEL_CHANNEL_CONTROL,
-				&result, offsetof(mesh_v2_control_payload_t, text) +
-				         result.text_len,
+				wire, payload_len,
 				KEEMASH_REL_PRIORITY_CONTROL);
 }
 
 static esp_err_t rel_send_control_result(uint32_t command_id, uint8_t status,
-					 const char *text)
+					 const char *text,
+					 const mesh_v2_operation_id_t *operation_id)
 {
-	return rel_send_control(MESH_V2_CONTROL_RESULT, command_id, status, text);
+	return rel_send_control(MESH_V2_CONTROL_RESULT, command_id, status, text,
+				operation_id);
 }
 
-static command_cache_t *command_cache_find(uint32_t command_id)
+static bool operation_id_eq(const mesh_v2_operation_id_t *a,
+			    const mesh_v2_operation_id_t *b)
+{
+	return a && b && a->high == b->high && a->low == b->low;
+}
+
+static command_cache_t *command_cache_find(
+	uint32_t command_id, const mesh_v2_operation_id_t *operation_id)
 {
 	for (size_t i = 0; i < sizeof(s_command_cache) / sizeof(s_command_cache[0]); i++) {
-		if (s_command_cache[i].used &&
+		if (!s_command_cache[i].used) continue;
+		if (operation_id && s_command_cache[i].has_operation_id &&
+		    operation_id_eq(&s_command_cache[i].operation_id, operation_id)) {
+			return &s_command_cache[i];
+		}
+		if (!operation_id && !s_command_cache[i].has_operation_id &&
 		    s_command_cache[i].command_id == command_id) {
 			return &s_command_cache[i];
 		}
@@ -209,13 +237,17 @@ static command_cache_t *command_cache_find(uint32_t command_id)
 	return NULL;
 }
 
-static void command_cache_store(uint32_t command_id, uint8_t status, const char *result)
+static void command_cache_store(uint32_t command_id,
+				const mesh_v2_operation_id_t *operation_id,
+				uint8_t status, const char *result)
 {
 	command_cache_t *slot = &s_command_cache[s_command_cache_next++ %
 		(sizeof(s_command_cache) / sizeof(s_command_cache[0]))];
 	memset(slot, 0, sizeof(*slot));
 	slot->used = true;
 	slot->command_id = command_id;
+	slot->has_operation_id = operation_id != NULL;
+	if (operation_id) slot->operation_id = *operation_id;
 	slot->status = status;
 	if (result) {
 		strncpy(slot->result, result, sizeof(slot->result) - 1);
@@ -258,10 +290,19 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 	    payload_len < offsetof(mesh_v2_control_payload_t, text) + command->text_len) {
 		return;
 	}
-	command_cache_t *cached = command_cache_find(command->command_id);
+	mesh_v2_operation_id_t operation_id = {0};
+	bool has_operation_id = keemash_mesh_control_get_operation_id(
+		payload, payload_len, &operation_id);
+	if ((command->rsv & MESH_V2_CONTROL_FLAG_OPERATION_ID) &&
+	    !has_operation_id) {
+		return;
+	}
+	const mesh_v2_operation_id_t *operation =
+		has_operation_id ? &operation_id : NULL;
+	command_cache_t *cached = command_cache_find(command->command_id, operation);
 	if (cached) {
-		(void)rel_send_control_result(cached->command_id, cached->status,
-					     cached->result);
+		(void)rel_send_control_result(command->command_id, cached->status,
+					     cached->result, operation);
 		return;
 	}
 	char text[MESH_V2_CONTROL_TEXT_MAX + 1];
@@ -298,8 +339,9 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		status = MESH_V2_CONTROL_STATUS_UNSUPPORTED;
 		result_text = "unsupported";
 	}
-	command_cache_store(command->command_id, status, result_text);
-	(void)rel_send_control_result(command->command_id, status, result_text);
+	command_cache_store(command->command_id, operation, status, result_text);
+	(void)rel_send_control_result(command->command_id, status, result_text,
+				      operation);
 }
 
 static void rel_event_cb(void *user, const uint8_t peer[6], uint8_t channel,
@@ -1538,7 +1580,7 @@ esp_err_t mesh_v2_node_send_event(uint32_t command_id, const char *text)
 		return ESP_ERR_TIMEOUT;
 	}
 	esp_err_t err = rel_send_control(MESH_V2_CONTROL_EVENT, command_id,
-					 MESH_V2_CONTROL_STATUS_OK, text);
+	                               MESH_V2_CONTROL_STATUS_OK, text, NULL);
 	xSemaphoreGiveRecursive(s_rel_lock);
 	return err;
 }
