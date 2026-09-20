@@ -166,7 +166,10 @@ that does require a coordinated node upgrade.
 | `node0` | `v0.9.4` | Fabric v2 root with controller-scoped CONTROL operation identity. |
 | `Kheater` | `v0.9.4` | Fabric canary with operation-aware command dedupe. |
 | `choinka` | `v0.9.4` | Fabric canary with operation-aware command dedupe. |
-| Other core-backed nodes | existing validated pin | Upgrade in each node-specific task. |
+| `lampk` | `v0.9.4` | OperationId-aware CONTROL deployed through remote OTA v2. |
+| `kPowerLed` | `v0.9.4` | OperationId-aware CONTROL deployed through remote OTA v2. |
+| `esp_mixer` | `v0.9.4` | OperationId-aware CONTROL deployed through remote OTA v2. |
+| `humidifier` | `v0.9.4` | OperationId-aware CONTROL deployed through remote OTA v2. |
 | Other nodes | latest stable | Migrate directly to the latest stable core in a node-specific task. |
 
 ## Production Defaults
