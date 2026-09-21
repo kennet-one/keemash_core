@@ -149,11 +149,12 @@ menu "KeeMASH Reliable Mesh"
         default 15000
 
     config KEEMASH_OTA_V3_ENABLE
-        bool "Enable OTA v3 signed-manifest verification (experimental)"
+        bool "Enable OTA v3 signed artifact foundation (experimental)"
         default n
         help
-            Compile signed-field verification for OTA v3 development.
-            This does not enable a receiver or advertise OTA v3 capability;
+            Compile signed-field and inactive-slot writer helpers for OTA v3
+            development. This does not connect a receiver to mesh traffic,
+            switch the boot partition, or advertise OTA v3 capability;
             existing OTA v2 remains the only deployed update path.
 
     config KEEMASH_OTA_V3_TRUSTED_P256_PUBKEY_HEX

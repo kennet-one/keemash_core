@@ -60,7 +60,15 @@ and CRC, and a newer tombstone for cancellation. It writes no checkpoint in
 the middle of a block. On load, CRC and structural bounds are only the first
 gate: the receiver must re-verify the saved signed fields, operation and
 artifact identity, update-slot label, then rehash the inactive flash prefix
-before calling `esp_ota_resume()`. No firmware calls this journal yet.
+before calling `esp_ota_resume()`. The experimental flash writer now uses
+this journal, but no production firmware calls the writer yet.
+
+The flash writer implements signed prepare, sequential block writes, verified
+checkpoint/resume, and complete image validation with `esp_ota_end()`. It
+requires a caller-supplied safety preflight and rejects a different operation
+while a checkpoint exists. It deliberately does not set the boot partition or
+reboot. Transport ownership, post-boot validation/reporting, OTA v1/v2
+exclusion and the deployment controller are still required before rollout.
 
 ## Signing key handling
 
