@@ -1,6 +1,6 @@
 [package]
 name = "keemash-keelink"
-version = "0.9.3"
+version = "0.10.0"
 edition = "2021"
 license = "GPL-2.0-only"
 description = "KeeLink v1 and KeeLink Fabric v2 codecs for KeeMASH"
@@ -9,7 +9,13 @@ description = "KeeLink v1 and KeeLink Fabric v2 codecs for KeeMASH"
 path = "src/lib.rs"
 
 [dependencies]
+crc32fast = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+hex = "0.4"
+p256 = { version = "0.13", features = ["ecdsa"] }
 prost = "0.14"
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
 uuid = { version = "1", features = ["v5", "v7"] }
 
 [build-dependencies]
@@ -17,4 +23,3 @@ prost-build = "0.14"
 protoc-bin-vendored = "3"
 
 [dev-dependencies]
-hex = "0.4"

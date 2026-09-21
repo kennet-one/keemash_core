@@ -4,6 +4,8 @@ pub mod fabric {
     include!(concat!(env!("OUT_DIR"), "/keemash.fabric.v2.rs"));
 }
 
+pub mod ota;
+
 pub const FABRIC_VERSION: u32 = 2;
 pub const FABRIC_MAX_FRAME: usize = 4096;
 pub const FABRIC_WIRE_PREFIX: &[u8; 4] = b"KLF2";

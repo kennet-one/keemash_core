@@ -8,6 +8,9 @@ Repository: `kennet-one/keemash_core`.
 Latest stable release: `v0.9.4`.
 API compatibility level: `0.9.4` (`KEEMASH_MESH_CORE_VERSION == 0x00090400UL`).
 
+The unreleased OTA v3 artifact work is documented in [docs/ota-v3.md](docs/ota-v3.md).
+It is not an available update path for deployed nodes yet.
+
 License: `GPL-2.0-only`.
 
 KeeLink v1 adds the bounded app/root binary codec in ESP-IDF C and Rust. Its

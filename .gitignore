@@ -1,4 +1,8 @@
 build/
+examples/ota_v3_compile_probe/sdkconfig
+examples/ota_v3_compile_probe/build*/
+examples/ota_v3_compile_probe/sdkconfig.old
+examples/ota_v3_compile_probe/dependencies.lock
 target/
 rust/*/target/
 managed_components/

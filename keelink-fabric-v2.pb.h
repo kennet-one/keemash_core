@@ -64,6 +64,43 @@ typedef enum _keemash_fabric_v2_Outcome {
     keemash_fabric_v2_Outcome_OUTCOME_UNKNOWN = 5
 } keemash_fabric_v2_Outcome;
 
+typedef enum _keemash_fabric_v2_FirmwareArtifactCodec {
+    keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_UNSPECIFIED = 0,
+    keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_FULL_DEFLATE = 1,
+    keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_DELTA_BLOCK = 2
+} keemash_fabric_v2_FirmwareArtifactCodec;
+
+typedef enum _keemash_fabric_v2_FirmwareBlockKind {
+    keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_UNSPECIFIED = 0,
+    keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_DEFLATE = 1,
+    keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_COPY_BASE = 2
+} keemash_fabric_v2_FirmwareBlockKind;
+
+typedef enum _keemash_fabric_v2_OtaPhase {
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_UNSPECIFIED = 0,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_VALIDATING = 1,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_STAGING = 2,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_CACHED = 3,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_WAITING_ROUTE = 4,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_TRANSFERRING = 5,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_VERIFYING = 6,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_REBOOTING = 7,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_BOOT_VALIDATING = 8,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_COMPLETE = 9,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_ROLLED_BACK = 10,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_OUTCOME_UNKNOWN = 11,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_ABORTED = 12,
+    keemash_fabric_v2_OtaPhase_OTA_PHASE_FAILED = 13
+} keemash_fabric_v2_OtaPhase;
+
+typedef enum _keemash_fabric_v2_OtaBootState {
+    keemash_fabric_v2_OtaBootState_OTA_BOOT_UNSPECIFIED = 0,
+    keemash_fabric_v2_OtaBootState_OTA_BOOT_PENDING_VERIFY = 1,
+    keemash_fabric_v2_OtaBootState_OTA_BOOT_VALIDATED = 2,
+    keemash_fabric_v2_OtaBootState_OTA_BOOT_ROLLED_BACK = 3,
+    keemash_fabric_v2_OtaBootState_OTA_BOOT_FAILED = 4
+} keemash_fabric_v2_OtaBootState;
+
 /* Struct definitions */
 typedef struct _keemash_fabric_v2_Id128 {
     uint64_t high;
@@ -287,6 +324,215 @@ typedef struct _keemash_fabric_v2_Probe {
     uint64_t reply_mono_us;
 } keemash_fabric_v2_Probe;
 
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareBlockDescriptor_raw_sha256_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareBlockDescriptor_encoded_sha256_t;
+typedef struct _keemash_fabric_v2_FirmwareBlockDescriptor {
+    uint32_t index;
+    uint32_t raw_offset;
+    uint32_t raw_size;
+    uint32_t encoded_offset;
+    uint32_t encoded_size;
+    keemash_fabric_v2_FirmwareBlockKind kind;
+    keemash_fabric_v2_FirmwareBlockDescriptor_raw_sha256_t raw_sha256;
+    keemash_fabric_v2_FirmwareBlockDescriptor_encoded_sha256_t encoded_sha256;
+} keemash_fabric_v2_FirmwareBlockDescriptor;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_image_sha256_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_encoded_sha256_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_block_table_sha256_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_base_image_sha256_t;
+/* The exact bytes of this message are signed. The outer manifest stores those
+ bytes verbatim so embedded targets never need to reproduce host encoding. */
+typedef struct _keemash_fabric_v2_FirmwareArtifactSignedFields {
+    uint32_t schema_version;
+    char project_name[33];
+    char chip_target[17];
+    char firmware_version[33];
+    char build_commit[41];
+    uint32_t minimum_core_version;
+    uint32_t minimum_fabric_schema;
+    uint32_t raw_size;
+    uint32_t encoded_size;
+    uint32_t required_app_slot_size;
+    keemash_fabric_v2_FirmwareArtifactCodec codec;
+    keemash_fabric_v2_FirmwareArtifactSignedFields_image_sha256_t image_sha256;
+    keemash_fabric_v2_FirmwareArtifactSignedFields_encoded_sha256_t encoded_sha256;
+    keemash_fabric_v2_FirmwareArtifactSignedFields_block_table_sha256_t block_table_sha256;
+    keemash_fabric_v2_FirmwareArtifactSignedFields_base_image_sha256_t base_image_sha256;
+    uint32_t block_size;
+    uint32_t block_count;
+    uint32_t deflate_window_bits;
+    char signing_key_id[33];
+} keemash_fabric_v2_FirmwareArtifactSignedFields;
+
+typedef PB_BYTES_ARRAY_T(1024) keemash_fabric_v2_FirmwareArtifactManifest_signed_fields_t;
+typedef PB_BYTES_ARRAY_T(64) keemash_fabric_v2_FirmwareArtifactManifest_signature_t;
+typedef struct _keemash_fabric_v2_FirmwareArtifactManifest {
+    keemash_fabric_v2_FirmwareArtifactManifest_signed_fields_t signed_fields;
+    pb_callback_t blocks;
+    keemash_fabric_v2_FirmwareArtifactManifest_signature_t signature;
+} keemash_fabric_v2_FirmwareArtifactManifest;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaStageRequest_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaStageRequest {
+    keemash_fabric_v2_OtaStageRequest_artifact_id_t artifact_id;
+    uint32_t package_size;
+    uint32_t manifest_size;
+    bool replace_existing;
+} keemash_fabric_v2_OtaStageRequest;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaStageChunk_artifact_id_t;
+typedef PB_BYTES_ARRAY_T(2560) keemash_fabric_v2_OtaStageChunk_data_t;
+typedef struct _keemash_fabric_v2_OtaStageChunk {
+    keemash_fabric_v2_OtaStageChunk_artifact_id_t artifact_id;
+    uint32_t offset;
+    keemash_fabric_v2_OtaStageChunk_data_t data;
+    bool final_chunk;
+} keemash_fabric_v2_OtaStageChunk;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaStageStatus_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaStageStatus {
+    keemash_fabric_v2_OtaStageStatus_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaPhase phase;
+    uint32_t offset;
+    uint32_t total;
+    uint32_t status;
+    char message[97];
+} keemash_fabric_v2_OtaStageStatus;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaDeployRequest_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaDeployRequest {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    bool has_target_node_id;
+    keemash_fabric_v2_Id128 target_node_id;
+    keemash_fabric_v2_OtaDeployRequest_artifact_id_t artifact_id;
+    bool root_target;
+} keemash_fabric_v2_OtaDeployRequest;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaDeployStatus_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaDeployStatus {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    bool has_target_node_id;
+    keemash_fabric_v2_Id128 target_node_id;
+    keemash_fabric_v2_OtaDeployStatus_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaPhase phase;
+    uint32_t raw_offset;
+    uint32_t encoded_offset;
+    uint32_t raw_size;
+    uint32_t encoded_size;
+    uint32_t window_credit;
+    uint32_t retries;
+    uint32_t resume_count;
+    uint32_t route_pause_count;
+    uint32_t status;
+    char message[97];
+} keemash_fabric_v2_OtaDeployStatus;
+
+typedef struct _keemash_fabric_v2_OtaCancelRequest {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    bool has_target_node_id;
+    keemash_fabric_v2_Id128 target_node_id;
+    char reason[65];
+} keemash_fabric_v2_OtaCancelRequest;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaPrepare_artifact_id_t;
+typedef PB_BYTES_ARRAY_T(1024) keemash_fabric_v2_OtaPrepare_signed_fields_t;
+typedef PB_BYTES_ARRAY_T(64) keemash_fabric_v2_OtaPrepare_signature_t;
+typedef struct _keemash_fabric_v2_OtaPrepare {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaPrepare_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaPrepare_signed_fields_t signed_fields;
+    keemash_fabric_v2_OtaPrepare_signature_t signature;
+    uint32_t requested_chunk_size;
+    uint32_t requested_window;
+} keemash_fabric_v2_OtaPrepare;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaBlockChunk_artifact_id_t;
+typedef PB_BYTES_ARRAY_T(2048) keemash_fabric_v2_OtaBlockChunk_data_t;
+typedef struct _keemash_fabric_v2_OtaBlockChunk {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaBlockChunk_artifact_id_t artifact_id;
+    bool has_block;
+    keemash_fabric_v2_FirmwareBlockDescriptor block;
+    uint32_t block_encoded_offset;
+    keemash_fabric_v2_OtaBlockChunk_data_t data;
+    bool final_chunk;
+} keemash_fabric_v2_OtaBlockChunk;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaCommit_artifact_id_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaCommit_block_table_sha256_t;
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaCommit_image_sha256_t;
+typedef struct _keemash_fabric_v2_OtaCommit {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaCommit_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaCommit_block_table_sha256_t block_table_sha256;
+    keemash_fabric_v2_OtaCommit_image_sha256_t image_sha256;
+} keemash_fabric_v2_OtaCommit;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaAbort_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaAbort {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaAbort_artifact_id_t artifact_id;
+    char reason[65];
+} keemash_fabric_v2_OtaAbort;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaQuery_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaQuery {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaQuery_artifact_id_t artifact_id;
+} keemash_fabric_v2_OtaQuery;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaTransferStatus_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaTransferStatus {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaTransferStatus_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaPhase phase;
+    uint32_t raw_offset;
+    uint32_t encoded_offset;
+    uint32_t next_block_index;
+    uint32_t window_credit;
+    uint32_t retries;
+    uint32_t resume_count;
+    uint32_t status;
+    char message[97];
+} keemash_fabric_v2_OtaTransferStatus;
+
+typedef struct _keemash_fabric_v2_OtaTransfer {
+    pb_size_t which_body;
+    union {
+        keemash_fabric_v2_OtaPrepare prepare;
+        keemash_fabric_v2_OtaBlockChunk data;
+        keemash_fabric_v2_OtaCommit commit;
+        keemash_fabric_v2_OtaAbort abort;
+        keemash_fabric_v2_OtaQuery query;
+        keemash_fabric_v2_OtaTransferStatus status;
+    } body;
+} keemash_fabric_v2_OtaTransfer;
+
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaBootReport_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaBootReport {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    bool has_node_id;
+    keemash_fabric_v2_Id128 node_id;
+    keemash_fabric_v2_OtaBootReport_artifact_id_t artifact_id;
+    uint64_t boot_session;
+    char firmware_version[33];
+    keemash_fabric_v2_OtaBootState state;
+    uint32_t rollback_state;
+    uint32_t health_status;
+    char message[97];
+} keemash_fabric_v2_OtaBootReport;
+
 typedef struct _keemash_fabric_v2_Envelope {
     uint32_t protocol_version;
     keemash_fabric_v2_TrafficClass traffic_class;
@@ -316,6 +562,13 @@ typedef struct _keemash_fabric_v2_Envelope {
         keemash_fabric_v2_LogLine log;
         keemash_fabric_v2_Gap gap;
         keemash_fabric_v2_Probe probe;
+        keemash_fabric_v2_OtaStageRequest ota_stage_request;
+        keemash_fabric_v2_OtaStageChunk ota_stage_chunk;
+        keemash_fabric_v2_OtaStageStatus ota_stage_status;
+        keemash_fabric_v2_OtaDeployRequest ota_deploy_request;
+        keemash_fabric_v2_OtaDeployStatus ota_deploy_status;
+        keemash_fabric_v2_OtaCancelRequest ota_cancel_request;
+        keemash_fabric_v2_OtaBootReport ota_boot_report;
     } body;
 } keemash_fabric_v2_Envelope;
 
@@ -349,6 +602,22 @@ extern "C" {
 #define _keemash_fabric_v2_Outcome_MAX keemash_fabric_v2_Outcome_OUTCOME_UNKNOWN
 #define _keemash_fabric_v2_Outcome_ARRAYSIZE ((keemash_fabric_v2_Outcome)(keemash_fabric_v2_Outcome_OUTCOME_UNKNOWN+1))
 
+#define _keemash_fabric_v2_FirmwareArtifactCodec_MIN keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_UNSPECIFIED
+#define _keemash_fabric_v2_FirmwareArtifactCodec_MAX keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_DELTA_BLOCK
+#define _keemash_fabric_v2_FirmwareArtifactCodec_ARRAYSIZE ((keemash_fabric_v2_FirmwareArtifactCodec)(keemash_fabric_v2_FirmwareArtifactCodec_ARTIFACT_CODEC_DELTA_BLOCK+1))
+
+#define _keemash_fabric_v2_FirmwareBlockKind_MIN keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_UNSPECIFIED
+#define _keemash_fabric_v2_FirmwareBlockKind_MAX keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_COPY_BASE
+#define _keemash_fabric_v2_FirmwareBlockKind_ARRAYSIZE ((keemash_fabric_v2_FirmwareBlockKind)(keemash_fabric_v2_FirmwareBlockKind_FIRMWARE_BLOCK_COPY_BASE+1))
+
+#define _keemash_fabric_v2_OtaPhase_MIN keemash_fabric_v2_OtaPhase_OTA_PHASE_UNSPECIFIED
+#define _keemash_fabric_v2_OtaPhase_MAX keemash_fabric_v2_OtaPhase_OTA_PHASE_FAILED
+#define _keemash_fabric_v2_OtaPhase_ARRAYSIZE ((keemash_fabric_v2_OtaPhase)(keemash_fabric_v2_OtaPhase_OTA_PHASE_FAILED+1))
+
+#define _keemash_fabric_v2_OtaBootState_MIN keemash_fabric_v2_OtaBootState_OTA_BOOT_UNSPECIFIED
+#define _keemash_fabric_v2_OtaBootState_MAX keemash_fabric_v2_OtaBootState_OTA_BOOT_FAILED
+#define _keemash_fabric_v2_OtaBootState_ARRAYSIZE ((keemash_fabric_v2_OtaBootState)(keemash_fabric_v2_OtaBootState_OTA_BOOT_FAILED+1))
+
 
 #define keemash_fabric_v2_ResumeCursor_traffic_class_ENUMTYPE keemash_fabric_v2_TrafficClass
 
@@ -374,6 +643,29 @@ extern "C" {
 #define keemash_fabric_v2_Gap_traffic_class_ENUMTYPE keemash_fabric_v2_TrafficClass
 
 
+#define keemash_fabric_v2_FirmwareBlockDescriptor_kind_ENUMTYPE keemash_fabric_v2_FirmwareBlockKind
+
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_codec_ENUMTYPE keemash_fabric_v2_FirmwareArtifactCodec
+
+
+
+
+#define keemash_fabric_v2_OtaStageStatus_phase_ENUMTYPE keemash_fabric_v2_OtaPhase
+
+
+#define keemash_fabric_v2_OtaDeployStatus_phase_ENUMTYPE keemash_fabric_v2_OtaPhase
+
+
+
+
+
+
+
+#define keemash_fabric_v2_OtaTransferStatus_phase_ENUMTYPE keemash_fabric_v2_OtaPhase
+
+
+#define keemash_fabric_v2_OtaBootReport_state_ENUMTYPE keemash_fabric_v2_OtaBootState
+
 #define keemash_fabric_v2_Envelope_traffic_class_ENUMTYPE keemash_fabric_v2_TrafficClass
 #define keemash_fabric_v2_Envelope_delivery_ENUMTYPE keemash_fabric_v2_DeliveryMode
 
@@ -396,6 +688,23 @@ extern "C" {
 #define keemash_fabric_v2_LogLine_init_default   {false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_Gap_init_default       {_keemash_fabric_v2_TrafficClass_MIN, 0, 0, "", 0}
 #define keemash_fabric_v2_Probe_init_default     {0, 0, 0, 0}
+#define keemash_fabric_v2_FirmwareBlockDescriptor_init_default {0, 0, 0, 0, 0, _keemash_fabric_v2_FirmwareBlockKind_MIN, {0, {0}}, {0, {0}}}
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_init_default {0, "", "", "", "", 0, 0, 0, 0, 0, _keemash_fabric_v2_FirmwareArtifactCodec_MIN, {0, {0}}, {0, {0}}, {0, {0}}, {0, {0}}, 0, 0, 0, ""}
+#define keemash_fabric_v2_FirmwareArtifactManifest_init_default {{0, {0}}, {{NULL}, NULL}, {0, {0}}}
+#define keemash_fabric_v2_OtaStageRequest_init_default {{0, {0}}, 0, 0, 0}
+#define keemash_fabric_v2_OtaStageChunk_init_default {{0, {0}}, 0, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaStageStatus_init_default {{0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaDeployRequest_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaDeployStatus_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaCancelRequest_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, ""}
+#define keemash_fabric_v2_OtaPrepare_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, {0, {0}}, {0, {0}}, 0, 0}
+#define keemash_fabric_v2_OtaBlockChunk_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, false, keemash_fabric_v2_FirmwareBlockDescriptor_init_default, 0, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaCommit_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, {0, {0}}, {0, {0}}}
+#define keemash_fabric_v2_OtaAbort_init_default  {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, ""}
+#define keemash_fabric_v2_OtaQuery_init_default  {false, keemash_fabric_v2_Id128_init_default, {0, {0}}}
+#define keemash_fabric_v2_OtaTransferStatus_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaTransfer_init_default {0, {keemash_fabric_v2_OtaPrepare_init_default}}
+#define keemash_fabric_v2_OtaBootReport_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, {0, {0}}, 0, "", _keemash_fabric_v2_OtaBootState_MIN, 0, 0, ""}
 #define keemash_fabric_v2_Envelope_init_default  {0, _keemash_fabric_v2_TrafficClass_MIN, _keemash_fabric_v2_DeliveryMode_MIN, 0, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, {keemash_fabric_v2_Hello_init_default}}
 #define keemash_fabric_v2_Id128_init_zero        {0, 0}
 #define keemash_fabric_v2_ResumeCursor_init_zero {_keemash_fabric_v2_TrafficClass_MIN, 0}
@@ -414,6 +723,23 @@ extern "C" {
 #define keemash_fabric_v2_LogLine_init_zero      {false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_Gap_init_zero          {_keemash_fabric_v2_TrafficClass_MIN, 0, 0, "", 0}
 #define keemash_fabric_v2_Probe_init_zero        {0, 0, 0, 0}
+#define keemash_fabric_v2_FirmwareBlockDescriptor_init_zero {0, 0, 0, 0, 0, _keemash_fabric_v2_FirmwareBlockKind_MIN, {0, {0}}, {0, {0}}}
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_init_zero {0, "", "", "", "", 0, 0, 0, 0, 0, _keemash_fabric_v2_FirmwareArtifactCodec_MIN, {0, {0}}, {0, {0}}, {0, {0}}, {0, {0}}, 0, 0, 0, ""}
+#define keemash_fabric_v2_FirmwareArtifactManifest_init_zero {{0, {0}}, {{NULL}, NULL}, {0, {0}}}
+#define keemash_fabric_v2_OtaStageRequest_init_zero {{0, {0}}, 0, 0, 0}
+#define keemash_fabric_v2_OtaStageChunk_init_zero {{0, {0}}, 0, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaStageStatus_init_zero {{0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaDeployRequest_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaDeployStatus_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaCancelRequest_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, ""}
+#define keemash_fabric_v2_OtaPrepare_init_zero   {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, {0, {0}}, {0, {0}}, 0, 0}
+#define keemash_fabric_v2_OtaBlockChunk_init_zero {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, false, keemash_fabric_v2_FirmwareBlockDescriptor_init_zero, 0, {0, {0}}, 0}
+#define keemash_fabric_v2_OtaCommit_init_zero    {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, {0, {0}}, {0, {0}}}
+#define keemash_fabric_v2_OtaAbort_init_zero     {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, ""}
+#define keemash_fabric_v2_OtaQuery_init_zero     {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}}
+#define keemash_fabric_v2_OtaTransferStatus_init_zero {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, ""}
+#define keemash_fabric_v2_OtaTransfer_init_zero  {0, {keemash_fabric_v2_OtaPrepare_init_zero}}
+#define keemash_fabric_v2_OtaBootReport_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, 0, "", _keemash_fabric_v2_OtaBootState_MIN, 0, 0, ""}
 #define keemash_fabric_v2_Envelope_init_zero     {0, _keemash_fabric_v2_TrafficClass_MIN, _keemash_fabric_v2_DeliveryMode_MIN, 0, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, {keemash_fabric_v2_Hello_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -556,6 +882,118 @@ extern "C" {
 #define keemash_fabric_v2_Probe_sender_mono_us_tag 2
 #define keemash_fabric_v2_Probe_receiver_mono_us_tag 3
 #define keemash_fabric_v2_Probe_reply_mono_us_tag 4
+#define keemash_fabric_v2_FirmwareBlockDescriptor_index_tag 1
+#define keemash_fabric_v2_FirmwareBlockDescriptor_raw_offset_tag 2
+#define keemash_fabric_v2_FirmwareBlockDescriptor_raw_size_tag 3
+#define keemash_fabric_v2_FirmwareBlockDescriptor_encoded_offset_tag 4
+#define keemash_fabric_v2_FirmwareBlockDescriptor_encoded_size_tag 5
+#define keemash_fabric_v2_FirmwareBlockDescriptor_kind_tag 6
+#define keemash_fabric_v2_FirmwareBlockDescriptor_raw_sha256_tag 7
+#define keemash_fabric_v2_FirmwareBlockDescriptor_encoded_sha256_tag 8
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_schema_version_tag 1
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_project_name_tag 2
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_chip_target_tag 3
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_firmware_version_tag 4
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_build_commit_tag 5
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_minimum_core_version_tag 6
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_minimum_fabric_schema_tag 7
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_raw_size_tag 8
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_encoded_size_tag 9
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_required_app_slot_size_tag 10
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_codec_tag 11
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_image_sha256_tag 12
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_encoded_sha256_tag 13
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_block_table_sha256_tag 14
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_base_image_sha256_tag 15
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_block_size_tag 16
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_block_count_tag 17
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_deflate_window_bits_tag 18
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_signing_key_id_tag 19
+#define keemash_fabric_v2_FirmwareArtifactManifest_signed_fields_tag 1
+#define keemash_fabric_v2_FirmwareArtifactManifest_blocks_tag 2
+#define keemash_fabric_v2_FirmwareArtifactManifest_signature_tag 3
+#define keemash_fabric_v2_OtaStageRequest_artifact_id_tag 1
+#define keemash_fabric_v2_OtaStageRequest_package_size_tag 2
+#define keemash_fabric_v2_OtaStageRequest_manifest_size_tag 3
+#define keemash_fabric_v2_OtaStageRequest_replace_existing_tag 4
+#define keemash_fabric_v2_OtaStageChunk_artifact_id_tag 1
+#define keemash_fabric_v2_OtaStageChunk_offset_tag 2
+#define keemash_fabric_v2_OtaStageChunk_data_tag 3
+#define keemash_fabric_v2_OtaStageChunk_final_chunk_tag 4
+#define keemash_fabric_v2_OtaStageStatus_artifact_id_tag 1
+#define keemash_fabric_v2_OtaStageStatus_phase_tag 2
+#define keemash_fabric_v2_OtaStageStatus_offset_tag 3
+#define keemash_fabric_v2_OtaStageStatus_total_tag 4
+#define keemash_fabric_v2_OtaStageStatus_status_tag 5
+#define keemash_fabric_v2_OtaStageStatus_message_tag 6
+#define keemash_fabric_v2_OtaDeployRequest_operation_id_tag 1
+#define keemash_fabric_v2_OtaDeployRequest_target_node_id_tag 2
+#define keemash_fabric_v2_OtaDeployRequest_artifact_id_tag 3
+#define keemash_fabric_v2_OtaDeployRequest_root_target_tag 4
+#define keemash_fabric_v2_OtaDeployStatus_operation_id_tag 1
+#define keemash_fabric_v2_OtaDeployStatus_target_node_id_tag 2
+#define keemash_fabric_v2_OtaDeployStatus_artifact_id_tag 3
+#define keemash_fabric_v2_OtaDeployStatus_phase_tag 4
+#define keemash_fabric_v2_OtaDeployStatus_raw_offset_tag 5
+#define keemash_fabric_v2_OtaDeployStatus_encoded_offset_tag 6
+#define keemash_fabric_v2_OtaDeployStatus_raw_size_tag 7
+#define keemash_fabric_v2_OtaDeployStatus_encoded_size_tag 8
+#define keemash_fabric_v2_OtaDeployStatus_window_credit_tag 9
+#define keemash_fabric_v2_OtaDeployStatus_retries_tag 10
+#define keemash_fabric_v2_OtaDeployStatus_resume_count_tag 11
+#define keemash_fabric_v2_OtaDeployStatus_route_pause_count_tag 12
+#define keemash_fabric_v2_OtaDeployStatus_status_tag 13
+#define keemash_fabric_v2_OtaDeployStatus_message_tag 14
+#define keemash_fabric_v2_OtaCancelRequest_operation_id_tag 1
+#define keemash_fabric_v2_OtaCancelRequest_target_node_id_tag 2
+#define keemash_fabric_v2_OtaCancelRequest_reason_tag 3
+#define keemash_fabric_v2_OtaPrepare_operation_id_tag 1
+#define keemash_fabric_v2_OtaPrepare_artifact_id_tag 2
+#define keemash_fabric_v2_OtaPrepare_signed_fields_tag 3
+#define keemash_fabric_v2_OtaPrepare_signature_tag 4
+#define keemash_fabric_v2_OtaPrepare_requested_chunk_size_tag 5
+#define keemash_fabric_v2_OtaPrepare_requested_window_tag 6
+#define keemash_fabric_v2_OtaBlockChunk_operation_id_tag 1
+#define keemash_fabric_v2_OtaBlockChunk_artifact_id_tag 2
+#define keemash_fabric_v2_OtaBlockChunk_block_tag 3
+#define keemash_fabric_v2_OtaBlockChunk_block_encoded_offset_tag 4
+#define keemash_fabric_v2_OtaBlockChunk_data_tag 5
+#define keemash_fabric_v2_OtaBlockChunk_final_chunk_tag 6
+#define keemash_fabric_v2_OtaCommit_operation_id_tag 1
+#define keemash_fabric_v2_OtaCommit_artifact_id_tag 2
+#define keemash_fabric_v2_OtaCommit_block_table_sha256_tag 3
+#define keemash_fabric_v2_OtaCommit_image_sha256_tag 4
+#define keemash_fabric_v2_OtaAbort_operation_id_tag 1
+#define keemash_fabric_v2_OtaAbort_artifact_id_tag 2
+#define keemash_fabric_v2_OtaAbort_reason_tag    3
+#define keemash_fabric_v2_OtaQuery_operation_id_tag 1
+#define keemash_fabric_v2_OtaQuery_artifact_id_tag 2
+#define keemash_fabric_v2_OtaTransferStatus_operation_id_tag 1
+#define keemash_fabric_v2_OtaTransferStatus_artifact_id_tag 2
+#define keemash_fabric_v2_OtaTransferStatus_phase_tag 3
+#define keemash_fabric_v2_OtaTransferStatus_raw_offset_tag 4
+#define keemash_fabric_v2_OtaTransferStatus_encoded_offset_tag 5
+#define keemash_fabric_v2_OtaTransferStatus_next_block_index_tag 6
+#define keemash_fabric_v2_OtaTransferStatus_window_credit_tag 7
+#define keemash_fabric_v2_OtaTransferStatus_retries_tag 8
+#define keemash_fabric_v2_OtaTransferStatus_resume_count_tag 9
+#define keemash_fabric_v2_OtaTransferStatus_status_tag 10
+#define keemash_fabric_v2_OtaTransferStatus_message_tag 11
+#define keemash_fabric_v2_OtaTransfer_prepare_tag 1
+#define keemash_fabric_v2_OtaTransfer_data_tag   2
+#define keemash_fabric_v2_OtaTransfer_commit_tag 3
+#define keemash_fabric_v2_OtaTransfer_abort_tag  4
+#define keemash_fabric_v2_OtaTransfer_query_tag  5
+#define keemash_fabric_v2_OtaTransfer_status_tag 6
+#define keemash_fabric_v2_OtaBootReport_operation_id_tag 1
+#define keemash_fabric_v2_OtaBootReport_node_id_tag 2
+#define keemash_fabric_v2_OtaBootReport_artifact_id_tag 3
+#define keemash_fabric_v2_OtaBootReport_boot_session_tag 4
+#define keemash_fabric_v2_OtaBootReport_firmware_version_tag 5
+#define keemash_fabric_v2_OtaBootReport_state_tag 6
+#define keemash_fabric_v2_OtaBootReport_rollback_state_tag 7
+#define keemash_fabric_v2_OtaBootReport_health_status_tag 8
+#define keemash_fabric_v2_OtaBootReport_message_tag 9
 #define keemash_fabric_v2_Envelope_protocol_version_tag 1
 #define keemash_fabric_v2_Envelope_traffic_class_tag 2
 #define keemash_fabric_v2_Envelope_delivery_tag  3
@@ -578,6 +1016,13 @@ extern "C" {
 #define keemash_fabric_v2_Envelope_log_tag       28
 #define keemash_fabric_v2_Envelope_gap_tag       29
 #define keemash_fabric_v2_Envelope_probe_tag     30
+#define keemash_fabric_v2_Envelope_ota_stage_request_tag 31
+#define keemash_fabric_v2_Envelope_ota_stage_chunk_tag 32
+#define keemash_fabric_v2_Envelope_ota_stage_status_tag 33
+#define keemash_fabric_v2_Envelope_ota_deploy_request_tag 34
+#define keemash_fabric_v2_Envelope_ota_deploy_status_tag 35
+#define keemash_fabric_v2_Envelope_ota_cancel_request_tag 36
+#define keemash_fabric_v2_Envelope_ota_boot_report_tag 37
 
 /* Struct field encoding specification for nanopb */
 #define keemash_fabric_v2_Id128_FIELDLIST(X, a) \
@@ -809,6 +1254,208 @@ X(a, STATIC,   SINGULAR, FIXED64,  reply_mono_us,     4)
 #define keemash_fabric_v2_Probe_CALLBACK NULL
 #define keemash_fabric_v2_Probe_DEFAULT NULL
 
+#define keemash_fabric_v2_FirmwareBlockDescriptor_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   index,             1) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_offset,        2) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_size,          3) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_offset,    4) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_size,      5) \
+X(a, STATIC,   SINGULAR, UENUM,    kind,              6) \
+X(a, STATIC,   SINGULAR, BYTES,    raw_sha256,        7) \
+X(a, STATIC,   SINGULAR, BYTES,    encoded_sha256,    8)
+#define keemash_fabric_v2_FirmwareBlockDescriptor_CALLBACK NULL
+#define keemash_fabric_v2_FirmwareBlockDescriptor_DEFAULT NULL
+
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   schema_version,    1) \
+X(a, STATIC,   SINGULAR, STRING,   project_name,      2) \
+X(a, STATIC,   SINGULAR, STRING,   chip_target,       3) \
+X(a, STATIC,   SINGULAR, STRING,   firmware_version,   4) \
+X(a, STATIC,   SINGULAR, STRING,   build_commit,      5) \
+X(a, STATIC,   SINGULAR, UINT32,   minimum_core_version,   6) \
+X(a, STATIC,   SINGULAR, UINT32,   minimum_fabric_schema,   7) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_size,          8) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_size,      9) \
+X(a, STATIC,   SINGULAR, UINT32,   required_app_slot_size,  10) \
+X(a, STATIC,   SINGULAR, UENUM,    codec,            11) \
+X(a, STATIC,   SINGULAR, BYTES,    image_sha256,     12) \
+X(a, STATIC,   SINGULAR, BYTES,    encoded_sha256,   13) \
+X(a, STATIC,   SINGULAR, BYTES,    block_table_sha256,  14) \
+X(a, STATIC,   SINGULAR, BYTES,    base_image_sha256,  15) \
+X(a, STATIC,   SINGULAR, UINT32,   block_size,       16) \
+X(a, STATIC,   SINGULAR, UINT32,   block_count,      17) \
+X(a, STATIC,   SINGULAR, UINT32,   deflate_window_bits,  18) \
+X(a, STATIC,   SINGULAR, STRING,   signing_key_id,   19)
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_CALLBACK NULL
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_DEFAULT NULL
+
+#define keemash_fabric_v2_FirmwareArtifactManifest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    signed_fields,     1) \
+X(a, CALLBACK, REPEATED, MESSAGE,  blocks,            2) \
+X(a, STATIC,   SINGULAR, BYTES,    signature,         3)
+#define keemash_fabric_v2_FirmwareArtifactManifest_CALLBACK pb_default_field_callback
+#define keemash_fabric_v2_FirmwareArtifactManifest_DEFAULT NULL
+#define keemash_fabric_v2_FirmwareArtifactManifest_blocks_MSGTYPE keemash_fabric_v2_FirmwareBlockDescriptor
+
+#define keemash_fabric_v2_OtaStageRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       1) \
+X(a, STATIC,   SINGULAR, UINT32,   package_size,      2) \
+X(a, STATIC,   SINGULAR, UINT32,   manifest_size,     3) \
+X(a, STATIC,   SINGULAR, BOOL,     replace_existing,   4)
+#define keemash_fabric_v2_OtaStageRequest_CALLBACK NULL
+#define keemash_fabric_v2_OtaStageRequest_DEFAULT NULL
+
+#define keemash_fabric_v2_OtaStageChunk_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       1) \
+X(a, STATIC,   SINGULAR, UINT32,   offset,            2) \
+X(a, STATIC,   SINGULAR, BYTES,    data,              3) \
+X(a, STATIC,   SINGULAR, BOOL,     final_chunk,       4)
+#define keemash_fabric_v2_OtaStageChunk_CALLBACK NULL
+#define keemash_fabric_v2_OtaStageChunk_DEFAULT NULL
+
+#define keemash_fabric_v2_OtaStageStatus_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       1) \
+X(a, STATIC,   SINGULAR, UENUM,    phase,             2) \
+X(a, STATIC,   SINGULAR, UINT32,   offset,            3) \
+X(a, STATIC,   SINGULAR, UINT32,   total,             4) \
+X(a, STATIC,   SINGULAR, UINT32,   status,            5) \
+X(a, STATIC,   SINGULAR, STRING,   message,           6)
+#define keemash_fabric_v2_OtaStageStatus_CALLBACK NULL
+#define keemash_fabric_v2_OtaStageStatus_DEFAULT NULL
+
+#define keemash_fabric_v2_OtaDeployRequest_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  target_node_id,    2) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       3) \
+X(a, STATIC,   SINGULAR, BOOL,     root_target,       4)
+#define keemash_fabric_v2_OtaDeployRequest_CALLBACK NULL
+#define keemash_fabric_v2_OtaDeployRequest_DEFAULT NULL
+#define keemash_fabric_v2_OtaDeployRequest_operation_id_MSGTYPE keemash_fabric_v2_Id128
+#define keemash_fabric_v2_OtaDeployRequest_target_node_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaDeployStatus_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  target_node_id,    2) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       3) \
+X(a, STATIC,   SINGULAR, UENUM,    phase,             4) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_offset,        5) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_offset,    6) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_size,          7) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_size,      8) \
+X(a, STATIC,   SINGULAR, UINT32,   window_credit,     9) \
+X(a, STATIC,   SINGULAR, UINT32,   retries,          10) \
+X(a, STATIC,   SINGULAR, UINT32,   resume_count,     11) \
+X(a, STATIC,   SINGULAR, UINT32,   route_pause_count,  12) \
+X(a, STATIC,   SINGULAR, UINT32,   status,           13) \
+X(a, STATIC,   SINGULAR, STRING,   message,          14)
+#define keemash_fabric_v2_OtaDeployStatus_CALLBACK NULL
+#define keemash_fabric_v2_OtaDeployStatus_DEFAULT NULL
+#define keemash_fabric_v2_OtaDeployStatus_operation_id_MSGTYPE keemash_fabric_v2_Id128
+#define keemash_fabric_v2_OtaDeployStatus_target_node_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaCancelRequest_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  target_node_id,    2) \
+X(a, STATIC,   SINGULAR, STRING,   reason,            3)
+#define keemash_fabric_v2_OtaCancelRequest_CALLBACK NULL
+#define keemash_fabric_v2_OtaCancelRequest_DEFAULT NULL
+#define keemash_fabric_v2_OtaCancelRequest_operation_id_MSGTYPE keemash_fabric_v2_Id128
+#define keemash_fabric_v2_OtaCancelRequest_target_node_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaPrepare_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   SINGULAR, BYTES,    signed_fields,     3) \
+X(a, STATIC,   SINGULAR, BYTES,    signature,         4) \
+X(a, STATIC,   SINGULAR, UINT32,   requested_chunk_size,   5) \
+X(a, STATIC,   SINGULAR, UINT32,   requested_window,   6)
+#define keemash_fabric_v2_OtaPrepare_CALLBACK NULL
+#define keemash_fabric_v2_OtaPrepare_DEFAULT NULL
+#define keemash_fabric_v2_OtaPrepare_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaBlockChunk_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  block,             3) \
+X(a, STATIC,   SINGULAR, UINT32,   block_encoded_offset,   4) \
+X(a, STATIC,   SINGULAR, BYTES,    data,              5) \
+X(a, STATIC,   SINGULAR, BOOL,     final_chunk,       6)
+#define keemash_fabric_v2_OtaBlockChunk_CALLBACK NULL
+#define keemash_fabric_v2_OtaBlockChunk_DEFAULT NULL
+#define keemash_fabric_v2_OtaBlockChunk_operation_id_MSGTYPE keemash_fabric_v2_Id128
+#define keemash_fabric_v2_OtaBlockChunk_block_MSGTYPE keemash_fabric_v2_FirmwareBlockDescriptor
+
+#define keemash_fabric_v2_OtaCommit_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   SINGULAR, BYTES,    block_table_sha256,   3) \
+X(a, STATIC,   SINGULAR, BYTES,    image_sha256,      4)
+#define keemash_fabric_v2_OtaCommit_CALLBACK NULL
+#define keemash_fabric_v2_OtaCommit_DEFAULT NULL
+#define keemash_fabric_v2_OtaCommit_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaAbort_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   SINGULAR, STRING,   reason,            3)
+#define keemash_fabric_v2_OtaAbort_CALLBACK NULL
+#define keemash_fabric_v2_OtaAbort_DEFAULT NULL
+#define keemash_fabric_v2_OtaAbort_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaQuery_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2)
+#define keemash_fabric_v2_OtaQuery_CALLBACK NULL
+#define keemash_fabric_v2_OtaQuery_DEFAULT NULL
+#define keemash_fabric_v2_OtaQuery_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaTransferStatus_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   SINGULAR, UENUM,    phase,             3) \
+X(a, STATIC,   SINGULAR, UINT32,   raw_offset,        4) \
+X(a, STATIC,   SINGULAR, UINT32,   encoded_offset,    5) \
+X(a, STATIC,   SINGULAR, UINT32,   next_block_index,   6) \
+X(a, STATIC,   SINGULAR, UINT32,   window_credit,     7) \
+X(a, STATIC,   SINGULAR, UINT32,   retries,           8) \
+X(a, STATIC,   SINGULAR, UINT32,   resume_count,      9) \
+X(a, STATIC,   SINGULAR, UINT32,   status,           10) \
+X(a, STATIC,   SINGULAR, STRING,   message,          11)
+#define keemash_fabric_v2_OtaTransferStatus_CALLBACK NULL
+#define keemash_fabric_v2_OtaTransferStatus_DEFAULT NULL
+#define keemash_fabric_v2_OtaTransferStatus_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaTransfer_FIELDLIST(X, a) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,prepare,body.prepare),   1) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,data,body.data),   2) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,commit,body.commit),   3) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,abort,body.abort),   4) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,query,body.query),   5) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,status,body.status),   6)
+#define keemash_fabric_v2_OtaTransfer_CALLBACK NULL
+#define keemash_fabric_v2_OtaTransfer_DEFAULT NULL
+#define keemash_fabric_v2_OtaTransfer_body_prepare_MSGTYPE keemash_fabric_v2_OtaPrepare
+#define keemash_fabric_v2_OtaTransfer_body_data_MSGTYPE keemash_fabric_v2_OtaBlockChunk
+#define keemash_fabric_v2_OtaTransfer_body_commit_MSGTYPE keemash_fabric_v2_OtaCommit
+#define keemash_fabric_v2_OtaTransfer_body_abort_MSGTYPE keemash_fabric_v2_OtaAbort
+#define keemash_fabric_v2_OtaTransfer_body_query_MSGTYPE keemash_fabric_v2_OtaQuery
+#define keemash_fabric_v2_OtaTransfer_body_status_MSGTYPE keemash_fabric_v2_OtaTransferStatus
+
+#define keemash_fabric_v2_OtaBootReport_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  node_id,           2) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       3) \
+X(a, STATIC,   SINGULAR, FIXED64,  boot_session,      4) \
+X(a, STATIC,   SINGULAR, STRING,   firmware_version,   5) \
+X(a, STATIC,   SINGULAR, UENUM,    state,             6) \
+X(a, STATIC,   SINGULAR, UINT32,   rollback_state,    7) \
+X(a, STATIC,   SINGULAR, UINT32,   health_status,     8) \
+X(a, STATIC,   SINGULAR, STRING,   message,           9)
+#define keemash_fabric_v2_OtaBootReport_CALLBACK NULL
+#define keemash_fabric_v2_OtaBootReport_DEFAULT NULL
+#define keemash_fabric_v2_OtaBootReport_operation_id_MSGTYPE keemash_fabric_v2_Id128
+#define keemash_fabric_v2_OtaBootReport_node_id_MSGTYPE keemash_fabric_v2_Id128
+
 #define keemash_fabric_v2_Envelope_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   protocol_version,   1) \
 X(a, STATIC,   SINGULAR, UENUM,    traffic_class,     2) \
@@ -831,7 +1478,14 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,tasks,body.tasks),  26) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,memory,body.memory),  27) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,log,body.log),  28) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,gap,body.gap),  29) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (body,probe,body.probe),  30)
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,probe,body.probe),  30) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_stage_request,body.ota_stage_request),  31) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_stage_chunk,body.ota_stage_chunk),  32) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_stage_status,body.ota_stage_status),  33) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_deploy_request,body.ota_deploy_request),  34) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_deploy_status,body.ota_deploy_status),  35) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_cancel_request,body.ota_cancel_request),  36) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ota_boot_report,body.ota_boot_report),  37)
 #define keemash_fabric_v2_Envelope_CALLBACK NULL
 #define keemash_fabric_v2_Envelope_DEFAULT NULL
 #define keemash_fabric_v2_Envelope_transport_session_MSGTYPE keemash_fabric_v2_Id128
@@ -849,6 +1503,13 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,probe,body.probe),  30)
 #define keemash_fabric_v2_Envelope_body_log_MSGTYPE keemash_fabric_v2_LogLine
 #define keemash_fabric_v2_Envelope_body_gap_MSGTYPE keemash_fabric_v2_Gap
 #define keemash_fabric_v2_Envelope_body_probe_MSGTYPE keemash_fabric_v2_Probe
+#define keemash_fabric_v2_Envelope_body_ota_stage_request_MSGTYPE keemash_fabric_v2_OtaStageRequest
+#define keemash_fabric_v2_Envelope_body_ota_stage_chunk_MSGTYPE keemash_fabric_v2_OtaStageChunk
+#define keemash_fabric_v2_Envelope_body_ota_stage_status_MSGTYPE keemash_fabric_v2_OtaStageStatus
+#define keemash_fabric_v2_Envelope_body_ota_deploy_request_MSGTYPE keemash_fabric_v2_OtaDeployRequest
+#define keemash_fabric_v2_Envelope_body_ota_deploy_status_MSGTYPE keemash_fabric_v2_OtaDeployStatus
+#define keemash_fabric_v2_Envelope_body_ota_cancel_request_MSGTYPE keemash_fabric_v2_OtaCancelRequest
+#define keemash_fabric_v2_Envelope_body_ota_boot_report_MSGTYPE keemash_fabric_v2_OtaBootReport
 
 extern const pb_msgdesc_t keemash_fabric_v2_Id128_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_ResumeCursor_msg;
@@ -867,6 +1528,23 @@ extern const pb_msgdesc_t keemash_fabric_v2_MemorySnapshot_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_LogLine_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_Gap_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_Probe_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_FirmwareBlockDescriptor_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_FirmwareArtifactSignedFields_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_FirmwareArtifactManifest_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaStageRequest_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaStageChunk_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaStageStatus_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaDeployRequest_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaDeployStatus_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaCancelRequest_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaPrepare_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaBlockChunk_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaCommit_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaAbort_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaQuery_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaTransferStatus_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaTransfer_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaBootReport_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
@@ -887,14 +1565,34 @@ extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 #define keemash_fabric_v2_LogLine_fields &keemash_fabric_v2_LogLine_msg
 #define keemash_fabric_v2_Gap_fields &keemash_fabric_v2_Gap_msg
 #define keemash_fabric_v2_Probe_fields &keemash_fabric_v2_Probe_msg
+#define keemash_fabric_v2_FirmwareBlockDescriptor_fields &keemash_fabric_v2_FirmwareBlockDescriptor_msg
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_fields &keemash_fabric_v2_FirmwareArtifactSignedFields_msg
+#define keemash_fabric_v2_FirmwareArtifactManifest_fields &keemash_fabric_v2_FirmwareArtifactManifest_msg
+#define keemash_fabric_v2_OtaStageRequest_fields &keemash_fabric_v2_OtaStageRequest_msg
+#define keemash_fabric_v2_OtaStageChunk_fields &keemash_fabric_v2_OtaStageChunk_msg
+#define keemash_fabric_v2_OtaStageStatus_fields &keemash_fabric_v2_OtaStageStatus_msg
+#define keemash_fabric_v2_OtaDeployRequest_fields &keemash_fabric_v2_OtaDeployRequest_msg
+#define keemash_fabric_v2_OtaDeployStatus_fields &keemash_fabric_v2_OtaDeployStatus_msg
+#define keemash_fabric_v2_OtaCancelRequest_fields &keemash_fabric_v2_OtaCancelRequest_msg
+#define keemash_fabric_v2_OtaPrepare_fields &keemash_fabric_v2_OtaPrepare_msg
+#define keemash_fabric_v2_OtaBlockChunk_fields &keemash_fabric_v2_OtaBlockChunk_msg
+#define keemash_fabric_v2_OtaCommit_fields &keemash_fabric_v2_OtaCommit_msg
+#define keemash_fabric_v2_OtaAbort_fields &keemash_fabric_v2_OtaAbort_msg
+#define keemash_fabric_v2_OtaQuery_fields &keemash_fabric_v2_OtaQuery_msg
+#define keemash_fabric_v2_OtaTransferStatus_fields &keemash_fabric_v2_OtaTransferStatus_msg
+#define keemash_fabric_v2_OtaTransfer_fields &keemash_fabric_v2_OtaTransfer_msg
+#define keemash_fabric_v2_OtaBootReport_fields &keemash_fabric_v2_OtaBootReport_msg
 #define keemash_fabric_v2_Envelope_fields &keemash_fabric_v2_Envelope_msg
 
 /* Maximum encoded size of messages (where known) */
+/* keemash_fabric_v2_FirmwareArtifactManifest_size depends on runtime parameters */
 #define KEEMASH_FABRIC_V2_KEELINK_FABRIC_V2_PB_H_MAX_SIZE keemash_fabric_v2_Envelope_size
 #define keemash_fabric_v2_ControlRequest_size    675
 #define keemash_fabric_v2_ControlResult_size     167
 #define keemash_fabric_v2_EndpointDescriptor_size 183
 #define keemash_fabric_v2_Envelope_size          4310
+#define keemash_fabric_v2_FirmwareArtifactSignedFields_size 358
+#define keemash_fabric_v2_FirmwareBlockDescriptor_size 100
 #define keemash_fabric_v2_Gap_size               72
 #define keemash_fabric_v2_GraphEdge_size         181
 #define keemash_fabric_v2_GraphSnapshot_size     3615
@@ -903,6 +1601,20 @@ extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 #define keemash_fabric_v2_LogLine_size           376
 #define keemash_fabric_v2_MemorySnapshot_size    155
 #define keemash_fabric_v2_NodeDescriptor_size    147
+#define keemash_fabric_v2_OtaAbort_size          120
+#define keemash_fabric_v2_OtaBlockChunk_size     2215
+#define keemash_fabric_v2_OtaBootReport_size     229
+#define keemash_fabric_v2_OtaCancelRequest_size  106
+#define keemash_fabric_v2_OtaCommit_size         122
+#define keemash_fabric_v2_OtaDeployRequest_size  76
+#define keemash_fabric_v2_OtaDeployStatus_size   228
+#define keemash_fabric_v2_OtaPrepare_size        1159
+#define keemash_fabric_v2_OtaQuery_size          54
+#define keemash_fabric_v2_OtaStageChunk_size     2605
+#define keemash_fabric_v2_OtaStageRequest_size   48
+#define keemash_fabric_v2_OtaStageStatus_size    152
+#define keemash_fabric_v2_OtaTransferStatus_size 196
+#define keemash_fabric_v2_OtaTransfer_size       2218
 #define keemash_fabric_v2_Probe_size             36
 #define keemash_fabric_v2_ResumeCursor_size      11
 #define keemash_fabric_v2_TaskEntry_size         62

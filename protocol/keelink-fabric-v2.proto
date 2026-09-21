@@ -57,6 +57,43 @@ enum Outcome {
   OUTCOME_UNKNOWN = 5;
 }
 
+enum FirmwareArtifactCodec {
+  ARTIFACT_CODEC_UNSPECIFIED = 0;
+  ARTIFACT_CODEC_FULL_DEFLATE = 1;
+  ARTIFACT_CODEC_DELTA_BLOCK = 2;
+}
+
+enum FirmwareBlockKind {
+  FIRMWARE_BLOCK_UNSPECIFIED = 0;
+  FIRMWARE_BLOCK_DEFLATE = 1;
+  FIRMWARE_BLOCK_COPY_BASE = 2;
+}
+
+enum OtaPhase {
+  OTA_PHASE_UNSPECIFIED = 0;
+  OTA_PHASE_VALIDATING = 1;
+  OTA_PHASE_STAGING = 2;
+  OTA_PHASE_CACHED = 3;
+  OTA_PHASE_WAITING_ROUTE = 4;
+  OTA_PHASE_TRANSFERRING = 5;
+  OTA_PHASE_VERIFYING = 6;
+  OTA_PHASE_REBOOTING = 7;
+  OTA_PHASE_BOOT_VALIDATING = 8;
+  OTA_PHASE_COMPLETE = 9;
+  OTA_PHASE_ROLLED_BACK = 10;
+  OTA_PHASE_OUTCOME_UNKNOWN = 11;
+  OTA_PHASE_ABORTED = 12;
+  OTA_PHASE_FAILED = 13;
+}
+
+enum OtaBootState {
+  OTA_BOOT_UNSPECIFIED = 0;
+  OTA_BOOT_PENDING_VERIFY = 1;
+  OTA_BOOT_VALIDATED = 2;
+  OTA_BOOT_ROLLED_BACK = 3;
+  OTA_BOOT_FAILED = 4;
+}
+
 message Id128 {
   fixed64 high = 1;
   fixed64 low = 2;
@@ -249,6 +286,173 @@ message Probe {
   fixed64 reply_mono_us = 4;
 }
 
+message FirmwareBlockDescriptor {
+  uint32 index = 1;
+  uint32 raw_offset = 2;
+  uint32 raw_size = 3;
+  uint32 encoded_offset = 4;
+  uint32 encoded_size = 5;
+  FirmwareBlockKind kind = 6;
+  bytes raw_sha256 = 7;
+  bytes encoded_sha256 = 8;
+}
+
+// The exact bytes of this message are signed. The outer manifest stores those
+// bytes verbatim so embedded targets never need to reproduce host encoding.
+message FirmwareArtifactSignedFields {
+  uint32 schema_version = 1;
+  string project_name = 2;
+  string chip_target = 3;
+  string firmware_version = 4;
+  string build_commit = 5;
+  uint32 minimum_core_version = 6;
+  uint32 minimum_fabric_schema = 7;
+  uint32 raw_size = 8;
+  uint32 encoded_size = 9;
+  uint32 required_app_slot_size = 10;
+  FirmwareArtifactCodec codec = 11;
+  bytes image_sha256 = 12;
+  bytes encoded_sha256 = 13;
+  bytes block_table_sha256 = 14;
+  bytes base_image_sha256 = 15;
+  uint32 block_size = 16;
+  uint32 block_count = 17;
+  uint32 deflate_window_bits = 18;
+  string signing_key_id = 19;
+}
+
+message FirmwareArtifactManifest {
+  bytes signed_fields = 1;
+  repeated FirmwareBlockDescriptor blocks = 2;
+  bytes signature = 3;
+}
+
+message OtaStageRequest {
+  bytes artifact_id = 1;
+  uint32 package_size = 2;
+  uint32 manifest_size = 3;
+  bool replace_existing = 4;
+}
+
+message OtaStageChunk {
+  bytes artifact_id = 1;
+  uint32 offset = 2;
+  bytes data = 3;
+  bool final_chunk = 4;
+}
+
+message OtaStageStatus {
+  bytes artifact_id = 1;
+  OtaPhase phase = 2;
+  uint32 offset = 3;
+  uint32 total = 4;
+  uint32 status = 5;
+  string message = 6;
+}
+
+message OtaDeployRequest {
+  Id128 operation_id = 1;
+  Id128 target_node_id = 2;
+  bytes artifact_id = 3;
+  bool root_target = 4;
+}
+
+message OtaDeployStatus {
+  Id128 operation_id = 1;
+  Id128 target_node_id = 2;
+  bytes artifact_id = 3;
+  OtaPhase phase = 4;
+  uint32 raw_offset = 5;
+  uint32 encoded_offset = 6;
+  uint32 raw_size = 7;
+  uint32 encoded_size = 8;
+  uint32 window_credit = 9;
+  uint32 retries = 10;
+  uint32 resume_count = 11;
+  uint32 route_pause_count = 12;
+  uint32 status = 13;
+  string message = 14;
+}
+
+message OtaCancelRequest {
+  Id128 operation_id = 1;
+  Id128 target_node_id = 2;
+  string reason = 3;
+}
+
+message OtaPrepare {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  bytes signed_fields = 3;
+  bytes signature = 4;
+  uint32 requested_chunk_size = 5;
+  uint32 requested_window = 6;
+}
+
+message OtaBlockChunk {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  FirmwareBlockDescriptor block = 3;
+  uint32 block_encoded_offset = 4;
+  bytes data = 5;
+  bool final_chunk = 6;
+}
+
+message OtaCommit {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  bytes block_table_sha256 = 3;
+  bytes image_sha256 = 4;
+}
+
+message OtaAbort {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  string reason = 3;
+}
+
+message OtaQuery {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+}
+
+message OtaTransferStatus {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  OtaPhase phase = 3;
+  uint32 raw_offset = 4;
+  uint32 encoded_offset = 5;
+  uint32 next_block_index = 6;
+  uint32 window_credit = 7;
+  uint32 retries = 8;
+  uint32 resume_count = 9;
+  uint32 status = 10;
+  string message = 11;
+}
+
+message OtaTransfer {
+  oneof body {
+    OtaPrepare prepare = 1;
+    OtaBlockChunk data = 2;
+    OtaCommit commit = 3;
+    OtaAbort abort = 4;
+    OtaQuery query = 5;
+    OtaTransferStatus status = 6;
+  }
+}
+
+message OtaBootReport {
+  Id128 operation_id = 1;
+  Id128 node_id = 2;
+  bytes artifact_id = 3;
+  fixed64 boot_session = 4;
+  string firmware_version = 5;
+  OtaBootState state = 6;
+  uint32 rollback_state = 7;
+  uint32 health_status = 8;
+  string message = 9;
+}
+
 message Envelope {
   uint32 protocol_version = 1;
   TrafficClass traffic_class = 2;
@@ -273,5 +477,12 @@ message Envelope {
     LogLine log = 28;
     Gap gap = 29;
     Probe probe = 30;
+    OtaStageRequest ota_stage_request = 31;
+    OtaStageChunk ota_stage_chunk = 32;
+    OtaStageStatus ota_stage_status = 33;
+    OtaDeployRequest ota_deploy_request = 34;
+    OtaDeployStatus ota_deploy_status = 35;
+    OtaCancelRequest ota_cancel_request = 36;
+    OtaBootReport ota_boot_report = 37;
   }
 }

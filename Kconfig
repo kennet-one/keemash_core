@@ -148,4 +148,42 @@ menu "KeeMASH Reliable Mesh"
         range 5000 300000
         default 15000
 
+    config KEEMASH_OTA_V3_ENABLE
+        bool "Enable OTA v3 signed-manifest verification (experimental)"
+        default n
+        help
+            Compile signed-field verification for OTA v3 development.
+            This does not enable a receiver or advertise OTA v3 capability;
+            existing OTA v2 remains the only deployed update path.
+
+    config KEEMASH_OTA_V3_TRUSTED_P256_PUBKEY_HEX
+        string "Trusted OTA v3 P-256 public key (SEC1 hex)"
+        depends on KEEMASH_OTA_V3_ENABLE
+        default ""
+        help
+            Uncompressed SEC1 P-256 point: 65 bytes / 130 hexadecimal
+            characters beginning with 04. This is public key material and
+            must match the offline signing key used by the kota3 packager.
+
+    config KEEMASH_OTA_V3_CHECKPOINT_BYTES
+        int "OTA v3 persistent checkpoint interval"
+        depends on KEEMASH_OTA_V3_ENABLE
+        range 16384 262144
+        default 65536
+
+    config KEEMASH_OTA_V3_MAX_WINDOW
+        int "Maximum OTA v3 application window"
+        depends on KEEMASH_OTA_V3_ENABLE
+        range 1 4
+        default 2
+
+    config KEEMASH_OTA_V3_DELTA_EXPERIMENTAL
+        bool "Enable experimental same-offset block delta"
+        depends on KEEMASH_OTA_V3_ENABLE
+        default n
+        help
+            Allow COPY_BASE blocks when the signed base image hash matches
+            the running application. Keep disabled for production rollout
+            until the kPowerLed canary passes.
+
 endmenu

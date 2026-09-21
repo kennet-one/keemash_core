@@ -7,6 +7,8 @@ idf_component_register(
          "keemash_mesh_log_stream.c"
          "keemash_mesh_time.c"
          "keemash_mesh_ota_receiver.c"
+         "keemash_ota_v3.c"
+         "keemash_ota_v3_inflate.c"
          "keemash_mesh_tx_broker.c"
          "keemash_mesh_event_outbox.c"
          "keemash_mesh_network.c"
@@ -15,5 +17,5 @@ idf_component_register(
          "keemash_fabric.c"
          "keemash_weekly_schedule.c"
     INCLUDE_DIRS "include" "."
-    REQUIRES esp_system esp_timer log heap app_update esp_app_format spi_flash bootloader_support mbedtls nvs_flash esp_wifi nanopb
+    REQUIRES esp_system esp_timer log heap app_update esp_app_format spi_flash bootloader_support mbedtls nvs_flash esp_wifi nanopb espressif__zlib
 )

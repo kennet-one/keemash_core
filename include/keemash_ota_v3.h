@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+#include "keelink-fabric-v2.pb.h"
+#include "zlib.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define KEEMASH_OTA_V3_SCHEMA_VERSION 1U
+#define KEEMASH_OTA_V3_SHA256_LEN 32U
+#define KEEMASH_OTA_V3_SIGNATURE_LEN 64U
+#define KEEMASH_OTA_V3_PUBLIC_KEY_LEN 65U
+#define KEEMASH_OTA_V3_FULL_BLOCK_SIZE 16384U
+#define KEEMASH_OTA_V3_DELTA_BLOCK_SIZE 8192U
+#define KEEMASH_OTA_V3_DEFLATE_WINDOW_BITS 11U
+#define KEEMASH_OTA_V3_MAX_IMAGE_SIZE (8U * 1024U * 1024U)
+#define KEEMASH_OTA_V3_MAX_PACKAGE_SIZE (16U * 1024U * 1024U)
+#define KEEMASH_OTA_V3_MAX_BLOCK_COUNT 1024U
+#define KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES 2048U
+
+typedef esp_err_t (*keemash_ota_v3_output_fn)(
+	const uint8_t *bytes, size_t length, void *context);
+
+typedef struct {
+	z_stream stream;
+	uint8_t output[KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES];
+	uint32_t expected_raw_size;
+	uint32_t produced_raw_size;
+	keemash_ota_v3_output_fn output_fn;
+	void *output_context;
+	bool active;
+} keemash_ota_v3_inflater_t;
+
+typedef struct {
+	uint32_t schema_version;
+	char project_name[33];
+	char chip_target[17];
+	char firmware_version[33];
+	char build_commit[41];
+	char signing_key_id[33];
+	uint32_t minimum_core_version;
+	uint32_t minimum_fabric_schema;
+	uint32_t raw_size;
+	uint32_t encoded_size;
+	uint32_t required_app_slot_size;
+	uint32_t codec;
+	uint32_t block_size;
+	uint32_t block_count;
+	uint32_t deflate_window_bits;
+	uint8_t image_sha256[KEEMASH_OTA_V3_SHA256_LEN];
+	uint8_t encoded_sha256[KEEMASH_OTA_V3_SHA256_LEN];
+	uint8_t block_table_sha256[KEEMASH_OTA_V3_SHA256_LEN];
+	uint8_t base_image_sha256[KEEMASH_OTA_V3_SHA256_LEN];
+	bool has_base_image;
+} keemash_ota_v3_signed_fields_t;
+
+esp_err_t keemash_ota_v3_verify_signed_fields(
+	const uint8_t *signed_fields, size_t signed_fields_len,
+	const uint8_t *signature, size_t signature_len,
+	keemash_ota_v3_signed_fields_t *out);
+
+esp_err_t keemash_ota_v3_check_target(
+	const keemash_ota_v3_signed_fields_t *fields,
+	const char *project_name, const char *chip_target,
+	uint32_t app_slot_size, uint32_t core_version,
+	uint32_t fabric_schema);
+
+esp_err_t keemash_ota_v3_encode_transfer(
+	const keemash_fabric_v2_OtaTransfer *message,
+	uint8_t *out, size_t capacity, size_t *written);
+
+esp_err_t keemash_ota_v3_decode_transfer(
+	const uint8_t *data, size_t length,
+	keemash_fabric_v2_OtaTransfer *message);
+
+esp_err_t keemash_ota_v3_encode_block_descriptor(
+	const keemash_fabric_v2_FirmwareBlockDescriptor *descriptor,
+	uint8_t *out, size_t capacity, size_t *written,
+	bool length_delimited);
+
+esp_err_t keemash_ota_v3_check_block_descriptor(
+	const keemash_ota_v3_signed_fields_t *fields,
+	const keemash_fabric_v2_FirmwareBlockDescriptor *descriptor,
+	uint32_t expected_index, uint32_t expected_raw_offset,
+	uint32_t expected_encoded_offset,
+	const uint8_t previous_chain[KEEMASH_OTA_V3_SHA256_LEN],
+	uint8_t next_chain[KEEMASH_OTA_V3_SHA256_LEN]);
+
+esp_err_t keemash_ota_v3_inflater_begin(
+	keemash_ota_v3_inflater_t *inflater, uint32_t expected_raw_size,
+	keemash_ota_v3_output_fn output_fn, void *output_context);
+
+esp_err_t keemash_ota_v3_inflater_feed(
+	keemash_ota_v3_inflater_t *inflater, const uint8_t *encoded,
+	size_t encoded_size, bool final_chunk);
+
+void keemash_ota_v3_inflater_end(keemash_ota_v3_inflater_t *inflater);
+
+#ifdef __cplusplus
+}
+#endif

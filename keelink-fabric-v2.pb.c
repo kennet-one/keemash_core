@@ -57,7 +57,66 @@ PB_BIND(keemash_fabric_v2_Gap, keemash_fabric_v2_Gap, AUTO)
 PB_BIND(keemash_fabric_v2_Probe, keemash_fabric_v2_Probe, AUTO)
 
 
+PB_BIND(keemash_fabric_v2_FirmwareBlockDescriptor, keemash_fabric_v2_FirmwareBlockDescriptor, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_FirmwareArtifactSignedFields, keemash_fabric_v2_FirmwareArtifactSignedFields, 2)
+
+
+PB_BIND(keemash_fabric_v2_FirmwareArtifactManifest, keemash_fabric_v2_FirmwareArtifactManifest, 2)
+
+
+PB_BIND(keemash_fabric_v2_OtaStageRequest, keemash_fabric_v2_OtaStageRequest, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaStageChunk, keemash_fabric_v2_OtaStageChunk, 2)
+
+
+PB_BIND(keemash_fabric_v2_OtaStageStatus, keemash_fabric_v2_OtaStageStatus, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaDeployRequest, keemash_fabric_v2_OtaDeployRequest, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaDeployStatus, keemash_fabric_v2_OtaDeployStatus, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaCancelRequest, keemash_fabric_v2_OtaCancelRequest, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaPrepare, keemash_fabric_v2_OtaPrepare, 2)
+
+
+PB_BIND(keemash_fabric_v2_OtaBlockChunk, keemash_fabric_v2_OtaBlockChunk, 2)
+
+
+PB_BIND(keemash_fabric_v2_OtaCommit, keemash_fabric_v2_OtaCommit, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaAbort, keemash_fabric_v2_OtaAbort, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaQuery, keemash_fabric_v2_OtaQuery, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaTransferStatus, keemash_fabric_v2_OtaTransferStatus, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaTransfer, keemash_fabric_v2_OtaTransfer, 2)
+
+
+PB_BIND(keemash_fabric_v2_OtaBootReport, keemash_fabric_v2_OtaBootReport, AUTO)
+
+
 PB_BIND(keemash_fabric_v2_Envelope, keemash_fabric_v2_Envelope, 2)
+
+
+
+
+
+
+
+
 
 
 

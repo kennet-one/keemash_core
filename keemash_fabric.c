@@ -106,7 +106,7 @@ esp_err_t keemash_fabric_validate(const keemash_fabric_envelope_t *message,
 	    message->delivery <= keemash_fabric_v2_DeliveryMode_DELIVERY_UNSPECIFIED ||
 	    message->delivery > keemash_fabric_v2_DeliveryMode_DELIVERY_SNAPSHOT ||
 	    message->which_body < keemash_fabric_v2_Envelope_hello_tag ||
-	    message->which_body > keemash_fabric_v2_Envelope_probe_tag) {
+	    message->which_body > keemash_fabric_v2_Envelope_ota_boot_report_tag) {
 		return ESP_ERR_INVALID_ARG;
 	}
 	if (message->which_body == keemash_fabric_v2_Envelope_hello_tag &&
