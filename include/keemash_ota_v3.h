@@ -7,6 +7,7 @@
 
 #include "esp_err.h"
 #include "keelink-fabric-v2.pb.h"
+#include "mbedtls/md.h"
 #include "zlib.h"
 
 #ifdef __cplusplus
@@ -24,6 +25,7 @@ extern "C" {
 #define KEEMASH_OTA_V3_MAX_PACKAGE_SIZE (16U * 1024U * 1024U)
 #define KEEMASH_OTA_V3_MAX_BLOCK_COUNT 1024U
 #define KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES 2048U
+#define KEEMASH_OTA_V3_MAX_CHUNK_BYTES 2048U
 
 typedef esp_err_t (*keemash_ota_v3_output_fn)(
 	const uint8_t *bytes, size_t length, void *context);
@@ -102,6 +104,48 @@ esp_err_t keemash_ota_v3_inflater_feed(
 	size_t encoded_size, bool final_chunk);
 
 void keemash_ota_v3_inflater_end(keemash_ota_v3_inflater_t *inflater);
+
+typedef struct {
+	keemash_ota_v3_signed_fields_t fields;
+	keemash_ota_v3_inflater_t inflater;
+	mbedtls_md_context_t image_hash;
+	mbedtls_md_context_t payload_hash;
+	mbedtls_md_context_t block_raw_hash;
+	mbedtls_md_context_t block_encoded_hash;
+	keemash_fabric_v2_FirmwareBlockDescriptor block;
+	keemash_fabric_v2_FirmwareBlockDescriptor last_chunk_block;
+	keemash_ota_v3_output_fn output_fn;
+	void *output_context;
+	uint8_t block_chain[KEEMASH_OTA_V3_SHA256_LEN];
+	uint8_t last_chunk_hash[KEEMASH_OTA_V3_SHA256_LEN];
+	uint32_t raw_offset;
+	uint32_t encoded_offset;
+	uint32_t block_encoded_offset;
+	uint32_t next_block_index;
+	uint32_t last_chunk_index;
+	uint32_t last_chunk_offset;
+	uint32_t last_chunk_size;
+	bool block_active;
+	bool last_chunk_valid;
+	bool last_chunk_final;
+	bool failed;
+	bool finished;
+} keemash_ota_v3_stream_t;
+
+esp_err_t keemash_ota_v3_stream_begin(
+	keemash_ota_v3_stream_t *stream,
+	const keemash_ota_v3_signed_fields_t *verified_fields,
+	keemash_ota_v3_output_fn output_fn, void *output_context);
+
+esp_err_t keemash_ota_v3_stream_feed(
+	keemash_ota_v3_stream_t *stream,
+	const keemash_fabric_v2_FirmwareBlockDescriptor *descriptor,
+	uint32_t block_encoded_offset, const uint8_t *chunk,
+	size_t chunk_size, bool final_chunk);
+
+esp_err_t keemash_ota_v3_stream_finish(keemash_ota_v3_stream_t *stream);
+
+void keemash_ota_v3_stream_end(keemash_ota_v3_stream_t *stream);
 
 #ifdef __cplusplus
 }

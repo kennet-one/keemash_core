@@ -1,7 +1,8 @@
 # OTA v3 artifact and transport (unreleased)
 
 OTA v3 is under development. The current C component verifies signed manifest
-fields, and the Rust crate can package and verify full artifacts. No firmware
+fields and validates streamed full-artifact blocks, while the Rust crate can
+package and verify full artifacts. No firmware
 advertises `MESH_V2_CAP_OTA_V3` yet. Do not deploy or flash an OTA v3 image
 until the receiver, root vault, boot report and rollback gates are complete.
 
@@ -35,6 +36,15 @@ Host parsing is bounded to 16 MiB package, 1 MiB manifest, 8 MiB raw image
 and 1024 blocks. The embedded target must check its actual update-slot size
 and supported core/Fabric versions. No zero-fill or implicit gaps are allowed
 between sequential raw or encoded offsets.
+
+The embedded stream validator accepts at most 2 KiB per chunk. It checks
+strict offsets, descriptors, the encoded and raw SHA-256 of every block, the
+complete payload and image hashes, and a byte-identical retry of the latest
+chunk. Its output callback may write provisional bytes only to an inactive
+partition; any validation or callback failure must abort that OTA handle.
+The validator does not yet implement flash checkpointing, resume, boot
+partition changes or post-boot health attestation. It is not a receiver or a
+deployment path by itself.
 
 ## Signing key handling
 

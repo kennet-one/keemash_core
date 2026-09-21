@@ -9,6 +9,7 @@ idf_component_register(
          "keemash_mesh_ota_receiver.c"
          "keemash_ota_v3.c"
          "keemash_ota_v3_inflate.c"
+         "keemash_ota_v3_stream.c"
          "keemash_mesh_tx_broker.c"
          "keemash_mesh_event_outbox.c"
          "keemash_mesh_network.c"
