@@ -4,6 +4,15 @@
 
 #include <string.h>
 
+#ifdef CONFIG_KEEMASH_OTA_V3_CHECKPOINT_BYTES
+#define OTA_V3_CHECKPOINT_BYTES CONFIG_KEEMASH_OTA_V3_CHECKPOINT_BYTES
+#else
+#define OTA_V3_CHECKPOINT_BYTES 65536U
+#endif
+
+_Static_assert(OTA_V3_CHECKPOINT_BYTES % KEEMASH_OTA_V3_FULL_BLOCK_SIZE == 0U,
+	       "OTA v3 checkpoint must align to a full block");
+
 static esp_err_t stream_fail(keemash_ota_v3_stream_t *stream, esp_err_t error)
 {
 	stream->failed = true;
@@ -52,6 +61,91 @@ esp_err_t keemash_ota_v3_stream_begin(
 	    mbedtls_md_starts(&stream->payload_hash) != 0) {
 		return stream_fail(stream, ESP_FAIL);
 	}
+	stream->payload_hash_complete = true;
+	return ESP_OK;
+}
+
+esp_err_t keemash_ota_v3_stream_resume(
+	keemash_ota_v3_stream_t *stream,
+	const keemash_ota_v3_signed_fields_t *verified_fields,
+	const keemash_ota_v3_resume_point_t *resume_point,
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	keemash_ota_v3_output_fn output_fn, void *output_context)
+{
+	if (!stream || !verified_fields || !resume_point || !read_fn ||
+	    resume_point->next_block_index == 0U ||
+	    resume_point->next_block_index >= verified_fields->block_count ||
+	    (uint64_t)resume_point->next_block_index * verified_fields->block_size !=
+		resume_point->raw_offset ||
+	    resume_point->raw_offset >= verified_fields->raw_size ||
+	    resume_point->encoded_offset == 0U ||
+	    resume_point->encoded_offset >= verified_fields->encoded_size) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	esp_err_t err = keemash_ota_v3_stream_begin(
+		stream, verified_fields, output_fn, output_context);
+	if (err != ESP_OK) return err;
+
+	uint8_t buffer[KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES];
+	for (uint32_t offset = 0U; offset < resume_point->raw_offset;) {
+		size_t length = resume_point->raw_offset - offset;
+		if (length > sizeof(buffer)) length = sizeof(buffer);
+		err = read_fn(offset, buffer, length, read_context);
+		if (err != ESP_OK ||
+		    mbedtls_md_update(&stream->image_hash, buffer, length) != 0) {
+			return stream_fail(stream, err == ESP_OK ? ESP_FAIL : err);
+		}
+		offset += (uint32_t)length;
+	}
+	mbedtls_md_context_t prefix = {0};
+	const mbedtls_md_info_t *sha256 = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+	uint8_t prefix_hash[KEEMASH_OTA_V3_SHA256_LEN];
+	mbedtls_md_init(&prefix);
+	if (!sha256 || mbedtls_md_setup(&prefix, sha256, 0) != 0 ||
+	    mbedtls_md_clone(&prefix, &stream->image_hash) != 0 ||
+	    mbedtls_md_finish(&prefix, prefix_hash) != 0) {
+		mbedtls_md_free(&prefix);
+		return stream_fail(stream, ESP_FAIL);
+	}
+	mbedtls_md_free(&prefix);
+	if (memcmp(prefix_hash, resume_point->image_prefix_sha256,
+		   KEEMASH_OTA_V3_SHA256_LEN) != 0) {
+		return stream_fail(stream, ESP_ERR_INVALID_CRC);
+	}
+	stream->next_block_index = resume_point->next_block_index;
+	stream->raw_offset = resume_point->raw_offset;
+	stream->encoded_offset = resume_point->encoded_offset;
+	memcpy(stream->block_chain, resume_point->block_chain,
+	       KEEMASH_OTA_V3_SHA256_LEN);
+	stream->payload_hash_complete = false;
+	return ESP_OK;
+}
+
+esp_err_t keemash_ota_v3_stream_checkpoint(
+	const keemash_ota_v3_stream_t *stream,
+	keemash_ota_v3_resume_point_t *resume_point)
+{
+	if (!stream || !resume_point || stream->failed || stream->finished ||
+	    stream->block_active || stream->next_block_index == 0U ||
+	    stream->next_block_index >= stream->fields.block_count ||
+	    stream->raw_offset % OTA_V3_CHECKPOINT_BYTES != 0U) {
+		return ESP_ERR_INVALID_STATE;
+	}
+	mbedtls_md_context_t prefix = {0};
+	const mbedtls_md_info_t *sha256 = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+	mbedtls_md_init(&prefix);
+	if (!sha256 || mbedtls_md_setup(&prefix, sha256, 0) != 0 ||
+	    mbedtls_md_clone(&prefix, &stream->image_hash) != 0 ||
+	    mbedtls_md_finish(&prefix, resume_point->image_prefix_sha256) != 0) {
+		mbedtls_md_free(&prefix);
+		return ESP_FAIL;
+	}
+	mbedtls_md_free(&prefix);
+	resume_point->next_block_index = stream->next_block_index;
+	resume_point->raw_offset = stream->raw_offset;
+	resume_point->encoded_offset = stream->encoded_offset;
+	memcpy(resume_point->block_chain, stream->block_chain,
+	       KEEMASH_OTA_V3_SHA256_LEN);
 	return ESP_OK;
 }
 
@@ -191,7 +285,8 @@ esp_err_t keemash_ota_v3_stream_finish(keemash_ota_v3_stream_t *stream)
 		return stream_fail(stream, ESP_FAIL);
 	}
 	if (memcmp(image_hash, stream->fields.image_sha256, 32U) != 0 ||
-	    memcmp(payload_hash, stream->fields.encoded_sha256, 32U) != 0 ||
+	    (stream->payload_hash_complete &&
+	     memcmp(payload_hash, stream->fields.encoded_sha256, 32U) != 0) ||
 	    memcmp(stream->block_chain, stream->fields.block_table_sha256, 32U) != 0) {
 		return stream_fail(stream, ESP_ERR_INVALID_CRC);
 	}

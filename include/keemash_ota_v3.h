@@ -30,6 +30,9 @@ extern "C" {
 typedef esp_err_t (*keemash_ota_v3_output_fn)(
 	const uint8_t *bytes, size_t length, void *context);
 
+typedef esp_err_t (*keemash_ota_v3_read_fn)(
+	uint32_t offset, uint8_t *bytes, size_t length, void *context);
+
 typedef struct {
 	z_stream stream;
 	uint8_t output[KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES];
@@ -106,6 +109,14 @@ esp_err_t keemash_ota_v3_inflater_feed(
 void keemash_ota_v3_inflater_end(keemash_ota_v3_inflater_t *inflater);
 
 typedef struct {
+	uint32_t next_block_index;
+	uint32_t raw_offset;
+	uint32_t encoded_offset;
+	uint8_t block_chain[KEEMASH_OTA_V3_SHA256_LEN];
+	uint8_t image_prefix_sha256[KEEMASH_OTA_V3_SHA256_LEN];
+} keemash_ota_v3_resume_point_t;
+
+typedef struct {
 	keemash_ota_v3_signed_fields_t fields;
 	keemash_ota_v3_inflater_t inflater;
 	mbedtls_md_context_t image_hash;
@@ -130,12 +141,24 @@ typedef struct {
 	bool last_chunk_final;
 	bool failed;
 	bool finished;
+	bool payload_hash_complete;
 } keemash_ota_v3_stream_t;
 
 esp_err_t keemash_ota_v3_stream_begin(
 	keemash_ota_v3_stream_t *stream,
 	const keemash_ota_v3_signed_fields_t *verified_fields,
 	keemash_ota_v3_output_fn output_fn, void *output_context);
+
+esp_err_t keemash_ota_v3_stream_resume(
+	keemash_ota_v3_stream_t *stream,
+	const keemash_ota_v3_signed_fields_t *verified_fields,
+	const keemash_ota_v3_resume_point_t *resume_point,
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	keemash_ota_v3_output_fn output_fn, void *output_context);
+
+esp_err_t keemash_ota_v3_stream_checkpoint(
+	const keemash_ota_v3_stream_t *stream,
+	keemash_ota_v3_resume_point_t *resume_point);
 
 esp_err_t keemash_ota_v3_stream_feed(
 	keemash_ota_v3_stream_t *stream,

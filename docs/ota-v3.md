@@ -42,9 +42,25 @@ strict offsets, descriptors, the encoded and raw SHA-256 of every block, the
 complete payload and image hashes, and a byte-identical retry of the latest
 chunk. Its output callback may write provisional bytes only to an inactive
 partition; any validation or callback failure must abort that OTA handle.
-The validator does not yet implement flash checkpointing, resume, boot
-partition changes or post-boot health attestation. It is not a receiver or a
-deployment path by itself.
+The validator does not yet implement persistent flash checkpoints, OTA handle
+resumption, boot partition changes or post-boot health attestation. It is not
+a receiver or a deployment path by itself.
+
+The stream API can restart at a verified block-boundary checkpoint. It
+re-reads the raw prefix from the inactive partition to rebuild the final
+image hash. The encoded prefix is not present in that partition, so a resumed
+stream verifies every remaining encoded block against its signed descriptor
+but does not recompute the redundant whole encoded-payload hash. The final
+signed image hash and descriptor-chain hash are still mandatory. The receiver
+must validate checkpoint metadata and the flash prefix before trusting the
+resume offsets; that receiver is not implemented yet.
+
+The embedded checkpoint journal uses alternating NVS blobs with generation
+and CRC, and a newer tombstone for cancellation. It writes no checkpoint in
+the middle of a block. On load, CRC and structural bounds are only the first
+gate: the receiver must re-verify the saved signed fields, operation and
+artifact identity, update-slot label, then rehash the inactive flash prefix
+before calling `esp_ota_resume()`. No firmware calls this journal yet.
 
 ## Signing key handling
 
