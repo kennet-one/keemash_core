@@ -1,11 +1,13 @@
 # OTA v3 artifact and transport (unreleased)
 
-OTA v3 is under development. The current C component verifies signed manifest
-fields, validates streamed full-artifact blocks and can re-read a complete
-full-deflate package from storage with bounded buffers. The Rust crate can
-package and verify full artifacts. No firmware
-advertises `MESH_V2_CAP_OTA_V3` yet. Do not deploy or flash an OTA v3 image
-until the receiver, root vault, boot report and rollback gates are complete.
+OTA v3 is under development. The C component verifies signed artifacts,
+streams them into an inactive slot with persistent checkpoints, selects a
+verified image only after a node safety preflight, and retains a post-boot
+attestation until the root acknowledges it. A bounded node worker and root
+send/receive facade carry typed OTA messages over reliable mesh. No production
+firmware advertises `MESH_V2_CAP_OTA_V3` yet. Do not deploy or flash an OTA v3
+image until root orchestration, production trust provisioning and interruption
+gates are complete.
 
 ## Artifact format
 
@@ -74,11 +76,19 @@ before calling `esp_ota_resume()`. The experimental flash writer now uses
 this journal, but no production firmware calls the writer yet.
 
 The flash writer implements signed prepare, sequential block writes, verified
-checkpoint/resume, and complete image validation with `esp_ota_end()`. It
-requires a caller-supplied safety preflight and rejects a different operation
-while a checkpoint exists. It deliberately does not set the boot partition or
-reboot. Transport ownership, post-boot validation/reporting, OTA v1/v2
-exclusion and the deployment controller are still required before rollout.
+checkpoint/resume, complete image validation with `esp_ota_end()` and an
+explicit activation step. Activation reruns the caller-supplied safety
+preflight, persists `BOOT_PENDING` and selects the verified partition; the
+worker sends a reliable status before it reboots. After boot, a report derives
+`PENDING`, `VALIDATED`, `ROLLED_BACK` or `FAILED` from the journal, running
+partition and ESP-IDF rollback state. The report remains pending until an exact
+operation/artifact/state acknowledgement clears it.
+
+Committed vault artifacts can be inspected through bounded authenticated
+metadata and block-iterator APIs without inflating the image a second time.
+Targets still verify each block and the final image. Root orchestration,
+production trust provisioning and hardware interruption tests remain required
+before rollout.
 
 ## Signing key handling
 
@@ -91,9 +101,12 @@ by released firmware.
 
 ## Migration boundary
 
-OTA v2 remains the bootstrap route. The root partition migration preserves
-the existing `ota_0` and `ota_1` offsets and sizes; USB flashing is required
-once to install the new partition table. An artifact being staged is not an
-applied deployment. The desktop must require an explicit plan/apply action,
-and the root must report success only after the expected post-boot image is
-validated. Missing validation is `outcome_unknown`, not success.
+OTA v2 remains only the bootstrap route while a node lacks the v3 capability.
+After every active core-backed node has completed and validated a real OTA v3
+update, production v2 routing and advertisement are removed; it is not a
+permanent silent fallback. The root partition migration preserves the existing
+`ota_0` and `ota_1` offsets and sizes; USB flashing is required once to install
+the new partition table. An artifact being staged is not an applied deployment.
+The desktop must require an explicit plan/apply action, and the root must report
+success only after the expected post-boot image is validated. Missing
+validation is `outcome_unknown`, not success.

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "keemash_fabric.h"
 #include "keemash_mesh_core.h"
 
 #ifdef __cplusplus
@@ -73,6 +74,8 @@ esp_err_t mesh_v2_root_send_task_request(const uint8_t mac[6], uint32_t request_
 esp_err_t mesh_v2_root_send_ota_payload(const uint8_t mac[6],
                                         const void *payload,
                                         size_t payload_len);
+esp_err_t mesh_v2_root_send_ota_v3_message(const uint8_t mac[6],
+	const keemash_fabric_v2_OtaMeshMessage *message);
 esp_err_t mesh_v2_root_send_command(const uint8_t mac[6], uint32_t command_id,
 				    const char *command);
 esp_err_t mesh_v2_root_send_command_operation(

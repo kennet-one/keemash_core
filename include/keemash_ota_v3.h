@@ -26,6 +26,7 @@ extern "C" {
 #define KEEMASH_OTA_V3_MAX_BLOCK_COUNT 1024U
 #define KEEMASH_OTA_V3_INFLATE_OUTPUT_BYTES 2048U
 #define KEEMASH_OTA_V3_MAX_CHUNK_BYTES 2048U
+#define KEEMASH_OTA_V3_SIGNED_FIELDS_MAX 1024U
 
 typedef esp_err_t (*keemash_ota_v3_output_fn)(
 	const uint8_t *bytes, size_t length, void *context);
@@ -65,6 +66,21 @@ typedef struct {
 	uint8_t base_image_sha256[KEEMASH_OTA_V3_SHA256_LEN];
 	bool has_base_image;
 } keemash_ota_v3_signed_fields_t;
+
+typedef struct {
+	keemash_ota_v3_signed_fields_t fields;
+	uint8_t signed_fields[KEEMASH_OTA_V3_SIGNED_FIELDS_MAX];
+	size_t signed_fields_len;
+	uint8_t signature[KEEMASH_OTA_V3_SIGNATURE_LEN];
+	size_t signature_len;
+	uint32_t manifest_size;
+	uint32_t payload_offset;
+	uint32_t package_size;
+} keemash_ota_v3_package_info_t;
+
+typedef esp_err_t (*keemash_ota_v3_block_fn)(
+	const keemash_fabric_v2_FirmwareBlockDescriptor *descriptor,
+	uint32_t payload_offset, void *context);
 
 esp_err_t keemash_ota_v3_verify_signed_fields(
 	const uint8_t *signed_fields, size_t signed_fields_len,
@@ -184,6 +200,18 @@ void keemash_ota_v3_stream_end(keemash_ota_v3_stream_t *stream);
 esp_err_t keemash_ota_v3_verify_package(
 	keemash_ota_v3_read_fn read_fn, void *read_context,
 	uint32_t package_size, keemash_ota_v3_signed_fields_t *out);
+
+/* Read authenticated deployment metadata without inflating the image again.
+ * A vault must run keemash_ota_v3_verify_package() before committing an
+ * artifact; targets still verify every block and the final image. */
+esp_err_t keemash_ota_v3_package_inspect(
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	uint32_t package_size, keemash_ota_v3_package_info_t *out);
+
+esp_err_t keemash_ota_v3_package_for_each_block(
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	const keemash_ota_v3_package_info_t *package,
+	keemash_ota_v3_block_fn block_fn, void *block_context);
 
 #ifdef __cplusplus
 }

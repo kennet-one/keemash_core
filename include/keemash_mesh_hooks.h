@@ -32,6 +32,8 @@ void keemash_mesh_root_on_sensor_snapshot(
 void keemash_mesh_root_on_ota_status(const uint8_t mac[6],
                                      const mesh_v2_ota_status_payload_t *status,
                                      size_t status_len);
+void keemash_mesh_root_on_ota_v3_message(const uint8_t mac[6],
+	const void *payload, size_t payload_len);
 void keemash_mesh_root_on_topology(const uint8_t mac[6], const void *payload, size_t payload_len);
 void keemash_mesh_root_on_control_event(const char *text);
 void keemash_mesh_root_on_control(const uint8_t peer[6], uint32_t root_session,

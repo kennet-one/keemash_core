@@ -58,6 +58,12 @@ void __attribute__((weak)) keemash_mesh_root_on_ota_status(const uint8_t mac[6],
     (void)mac; (void)status; (void)status_len;
 }
 
+void __attribute__((weak)) keemash_mesh_root_on_ota_v3_message(
+	const uint8_t mac[6], const void *payload, size_t payload_len)
+{
+	(void)mac; (void)payload; (void)payload_len;
+}
+
 void __attribute__((weak)) keemash_mesh_root_on_topology(const uint8_t mac[6],
                                                          const void *payload,
                                                          size_t payload_len)

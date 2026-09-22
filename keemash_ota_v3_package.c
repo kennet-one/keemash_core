@@ -27,9 +27,20 @@ typedef struct {
 	uint32_t payload_offset;
 	uint32_t payload_size;
 	keemash_ota_v3_stream_t *validator;
+	keemash_ota_v3_block_fn visitor;
+	void *visitor_context;
 	uint32_t block_count;
 	esp_err_t error;
 } block_context_t;
+
+typedef enum {
+	MANIFEST_COUNT_BLOCKS,
+	MANIFEST_VALIDATE_BLOCKS,
+	MANIFEST_VISIT_BLOCKS,
+} manifest_block_mode_t;
+
+static esp_err_t check_manifest_crc(keemash_ota_v3_read_fn read_fn,
+	void *read_context, uint32_t manifest_size, uint32_t expected);
 
 static uint32_t le32(const uint8_t *bytes)
 {
@@ -114,10 +125,42 @@ static bool validate_block(pb_istream_t *stream, const pb_field_t *field,
 	return true;
 }
 
+static bool visit_block(pb_istream_t *stream, const pb_field_t *field,
+	void **argument)
+{
+	(void)field;
+	block_context_t *blocks = *argument;
+	if (!blocks->visitor ||
+	    blocks->block_count >= KEEMASH_OTA_V3_MAX_BLOCK_COUNT) {
+		blocks->error = ESP_ERR_INVALID_SIZE;
+		return false;
+	}
+	keemash_fabric_v2_FirmwareBlockDescriptor descriptor =
+		keemash_fabric_v2_FirmwareBlockDescriptor_init_zero;
+	if (!pb_decode(stream, keemash_fabric_v2_FirmwareBlockDescriptor_fields,
+		&descriptor)) {
+		blocks->error = ESP_ERR_INVALID_RESPONSE;
+		return false;
+	}
+	if (descriptor.encoded_offset > blocks->payload_size ||
+	    descriptor.encoded_size == 0U ||
+	    descriptor.encoded_size >
+		blocks->payload_size - descriptor.encoded_offset) {
+		blocks->error = ESP_ERR_INVALID_SIZE;
+		return false;
+	}
+	blocks->error = blocks->visitor(&descriptor,
+		blocks->payload_offset + descriptor.encoded_offset,
+		blocks->visitor_context);
+	if (blocks->error != ESP_OK) return false;
+	blocks->block_count++;
+	return true;
+}
+
 static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 	void *read_context, uint32_t manifest_size,
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest,
-	block_context_t *blocks, bool validate)
+	block_context_t *blocks, manifest_block_mode_t mode)
 {
 	package_source_t source = {
 		.read = read_fn,
@@ -128,7 +171,9 @@ static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 	};
 	*manifest = (keemash_fabric_v2_FirmwareArtifactManifest)
 		keemash_fabric_v2_FirmwareArtifactManifest_init_zero;
-	manifest->blocks.funcs.decode = validate ? validate_block : count_block;
+	manifest->blocks.funcs.decode = mode == MANIFEST_VALIDATE_BLOCKS ?
+		validate_block : mode == MANIFEST_VISIT_BLOCKS ?
+		visit_block : count_block;
 	manifest->blocks.arg = blocks;
 	pb_istream_t input = {
 		.callback = read_manifest,
@@ -142,6 +187,103 @@ static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 			ESP_ERR_INVALID_RESPONSE;
 	}
 	return ESP_OK;
+}
+
+static esp_err_t read_header(keemash_ota_v3_read_fn read_fn,
+	void *read_context, uint32_t package_size, uint32_t *manifest_size)
+{
+	if (!read_fn || !manifest_size || package_size <= KOTA3_HEADER_SIZE ||
+	    package_size > KEEMASH_OTA_V3_MAX_PACKAGE_SIZE)
+		return ESP_ERR_INVALID_ARG;
+	uint8_t header[KOTA3_HEADER_SIZE];
+	esp_err_t err = read_fn(0U, header, sizeof(header), read_context);
+	if (err != ESP_OK) return err;
+	if (memcmp(header, s_magic, sizeof(s_magic)) != 0)
+		return ESP_ERR_INVALID_RESPONSE;
+	*manifest_size = le32(header + 8U);
+	if (*manifest_size == 0U || *manifest_size > KOTA3_MANIFEST_MAX ||
+	    *manifest_size > package_size - KOTA3_HEADER_SIZE)
+		return ESP_ERR_INVALID_SIZE;
+	return check_manifest_crc(read_fn, read_context, *manifest_size,
+		le32(header + 12U));
+}
+
+esp_err_t keemash_ota_v3_package_inspect(
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	uint32_t package_size, keemash_ota_v3_package_info_t *out)
+{
+	if (!out) return ESP_ERR_INVALID_ARG;
+	uint32_t manifest_size = 0U;
+	esp_err_t err = read_header(read_fn, read_context, package_size,
+		&manifest_size);
+	if (err != ESP_OK) return err;
+	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
+		calloc(1U, sizeof(*manifest));
+	if (!manifest) return ESP_ERR_NO_MEM;
+	block_context_t blocks = {.error = ESP_OK};
+	err = decode_manifest(read_fn, read_context, manifest_size, manifest,
+		&blocks, MANIFEST_COUNT_BLOCKS);
+	if (err != ESP_OK) goto done;
+	keemash_ota_v3_package_info_t info = {
+		.manifest_size = manifest_size,
+		.payload_offset = KOTA3_HEADER_SIZE + manifest_size,
+		.package_size = package_size,
+	};
+	if (manifest->signed_fields.size > sizeof(info.signed_fields) ||
+	    manifest->signature.size != sizeof(info.signature)) {
+		err = ESP_ERR_INVALID_SIZE;
+		goto done;
+	}
+	info.signed_fields_len = manifest->signed_fields.size;
+	info.signature_len = manifest->signature.size;
+	memcpy(info.signed_fields, manifest->signed_fields.bytes,
+		info.signed_fields_len);
+	memcpy(info.signature, manifest->signature.bytes,
+		info.signature_len);
+	err = keemash_ota_v3_verify_signed_fields(info.signed_fields,
+		info.signed_fields_len, info.signature, info.signature_len,
+		&info.fields);
+	if (err != ESP_OK) goto done;
+	if (info.fields.block_count != blocks.block_count ||
+	    info.fields.encoded_size != package_size - info.payload_offset ||
+	    info.fields.has_base_image) {
+		err = ESP_ERR_INVALID_SIZE;
+		goto done;
+	}
+	*out = info;
+done:
+	free(manifest);
+	return err;
+}
+
+esp_err_t keemash_ota_v3_package_for_each_block(
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	const keemash_ota_v3_package_info_t *package,
+	keemash_ota_v3_block_fn block_fn, void *block_context)
+{
+	if (!read_fn || !package || !block_fn ||
+	    package->manifest_size == 0U ||
+	    package->payload_offset != KOTA3_HEADER_SIZE + package->manifest_size ||
+	    package->package_size < package->payload_offset ||
+	    package->fields.encoded_size !=
+		package->package_size - package->payload_offset)
+		return ESP_ERR_INVALID_ARG;
+	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
+		calloc(1U, sizeof(*manifest));
+	if (!manifest) return ESP_ERR_NO_MEM;
+	block_context_t blocks = {
+		.payload_offset = package->payload_offset,
+		.payload_size = package->fields.encoded_size,
+		.visitor = block_fn,
+		.visitor_context = block_context,
+		.error = ESP_OK,
+	};
+	esp_err_t err = decode_manifest(read_fn, read_context,
+		package->manifest_size, manifest, &blocks, MANIFEST_VISIT_BLOCKS);
+	if (err == ESP_OK && blocks.block_count != package->fields.block_count)
+		err = ESP_ERR_INVALID_RESPONSE;
+	free(manifest);
+	return err;
 }
 
 static esp_err_t discard_output(const uint8_t *bytes, size_t length,
@@ -176,20 +318,10 @@ esp_err_t keemash_ota_v3_verify_package(
 	keemash_ota_v3_read_fn read_fn, void *read_context,
 	uint32_t package_size, keemash_ota_v3_signed_fields_t *out)
 {
-	if (!read_fn || !out || package_size <= KOTA3_HEADER_SIZE ||
-	    package_size > KEEMASH_OTA_V3_MAX_PACKAGE_SIZE)
-		return ESP_ERR_INVALID_ARG;
-	uint8_t header[KOTA3_HEADER_SIZE];
-	esp_err_t err = read_fn(0U, header, sizeof(header), read_context);
-	if (err != ESP_OK) return err;
-	if (memcmp(header, s_magic, sizeof(s_magic)) != 0)
-		return ESP_ERR_INVALID_RESPONSE;
-	uint32_t manifest_size = le32(header + 8U);
-	if (manifest_size == 0U || manifest_size > KOTA3_MANIFEST_MAX ||
-	    manifest_size > package_size - KOTA3_HEADER_SIZE)
-		return ESP_ERR_INVALID_SIZE;
-	err = check_manifest_crc(read_fn, read_context, manifest_size,
-		le32(header + 12U));
+	if (!out) return ESP_ERR_INVALID_ARG;
+	uint32_t manifest_size = 0U;
+	esp_err_t err = read_header(read_fn, read_context, package_size,
+		&manifest_size);
 	if (err != ESP_OK) return err;
 
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
@@ -202,7 +334,7 @@ esp_err_t keemash_ota_v3_verify_package(
 	}
 	block_context_t blocks = {.error = ESP_OK};
 	err = decode_manifest(read_fn, read_context, manifest_size,
-		manifest, &blocks, false);
+		manifest, &blocks, MANIFEST_COUNT_BLOCKS);
 	if (err != ESP_OK) goto done;
 	uint32_t expected_count = blocks.block_count;
 	uint8_t original_signed_fields[1024];
@@ -237,7 +369,7 @@ esp_err_t keemash_ota_v3_verify_package(
 		.error = ESP_OK,
 	};
 	err = decode_manifest(read_fn, read_context, manifest_size,
-		manifest, &blocks, true);
+		manifest, &blocks, MANIFEST_VALIDATE_BLOCKS);
 	if (err == ESP_OK &&
 	    (manifest->signed_fields.size != original_signed_size ||
 	     manifest->signature.size != original_signature_size ||

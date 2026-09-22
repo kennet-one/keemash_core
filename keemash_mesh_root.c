@@ -2,6 +2,7 @@
 #include "keemash_mesh_root.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -15,6 +16,7 @@
 
 #include "keemash_mesh_core.h"
 #include "keemash_mesh_hooks.h"
+#include "keemash_ota_v3.h"
 
 static const char *TAG = "mesh_v2";
 
@@ -260,9 +262,14 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		keemash_mesh_root_on_sensor_snapshot(peer, payload);
 		return;
 	}
-	if (channel == MESH_V2_TUNNEL_CHANNEL_OTA &&
-	    payload_len >= sizeof(mesh_v2_ota_status_payload_t)) {
-		keemash_mesh_root_on_ota_status(peer, payload, payload_len);
+	if (channel == MESH_V2_TUNNEL_CHANNEL_OTA) {
+		const uint8_t *ota_bytes = payload;
+		if (payload_len > 0U && ota_bytes[0] > MESH_V2_OTA_OP_STATUS) {
+			keemash_mesh_root_on_ota_v3_message(peer, payload,
+				payload_len);
+		} else if (payload_len >= sizeof(mesh_v2_ota_status_payload_t)) {
+			keemash_mesh_root_on_ota_status(peer, payload, payload_len);
+		}
 		return;
 	}
 	if (channel == MESH_V2_TUNNEL_CHANNEL_TOPOLOGY &&
@@ -1544,6 +1551,21 @@ esp_err_t mesh_v2_root_send_ota_payload(const uint8_t mac[6],
 		                       KEEMASH_REL_PRIORITY_OTA);
 	}
 	xSemaphoreGiveRecursive(s_rel_lock);
+	return err;
+}
+
+esp_err_t mesh_v2_root_send_ota_v3_message(const uint8_t mac[6],
+	const keemash_fabric_v2_OtaMeshMessage *message)
+{
+	if (!mac || !message) return ESP_ERR_INVALID_ARG;
+	uint8_t *wire = malloc(keemash_fabric_v2_OtaMeshMessage_size);
+	if (!wire) return ESP_ERR_NO_MEM;
+	size_t wire_len = 0U;
+	esp_err_t err = keemash_ota_v3_encode_mesh_message(message, wire,
+		keemash_fabric_v2_OtaMeshMessage_size, &wire_len);
+	if (err == ESP_OK)
+		err = mesh_v2_root_send_ota_payload(mac, wire, wire_len);
+	free(wire);
 	return err;
 }
 

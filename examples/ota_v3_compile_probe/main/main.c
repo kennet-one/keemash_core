@@ -6,4 +6,7 @@ void app_main(void)
 {
 	(void)keemash_ota_v3_verify_signed_fields;
 	(void)keemash_ota_v3_verify_package(NULL, NULL, 0U, NULL);
+	(void)keemash_ota_v3_package_inspect(NULL, NULL, 0U, NULL);
+	(void)keemash_ota_v3_package_for_each_block(NULL, NULL, NULL, NULL,
+		NULL);
 }
