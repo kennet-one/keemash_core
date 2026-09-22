@@ -170,6 +170,13 @@ esp_err_t keemash_ota_v3_stream_finish(keemash_ota_v3_stream_t *stream);
 
 void keemash_ota_v3_stream_end(keemash_ota_v3_stream_t *stream);
 
+/* Validate a complete full-deflate .kota3 package via bounded random reads.
+ * The caller must serialize writes to the underlying storage during this call.
+ * This does not install the image or authorize a target-specific deployment. */
+esp_err_t keemash_ota_v3_verify_package(
+	keemash_ota_v3_read_fn read_fn, void *read_context,
+	uint32_t package_size, keemash_ota_v3_signed_fields_t *out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,7 +1,8 @@
 # OTA v3 artifact and transport (unreleased)
 
 OTA v3 is under development. The current C component verifies signed manifest
-fields and validates streamed full-artifact blocks, while the Rust crate can
+fields, validates streamed full-artifact blocks and can re-read a complete
+full-deflate package from storage with bounded buffers. The Rust crate can
 package and verify full artifacts. No firmware
 advertises `MESH_V2_CAP_OTA_V3` yet. Do not deploy or flash an OTA v3 image
 until the receiver, root vault, boot report and rollback gates are complete.
@@ -42,9 +43,17 @@ strict offsets, descriptors, the encoded and raw SHA-256 of every block, the
 complete payload and image hashes, and a byte-identical retry of the latest
 chunk. Its output callback may write provisional bytes only to an inactive
 partition; any validation or callback failure must abort that OTA handle.
-The validator does not yet implement persistent flash checkpoints, OTA handle
-resumption, boot partition changes or post-boot health attestation. It is not
-a receiver or a deployment path by itself.
+The separate flash receiver adds persistent checkpoints and OTA-handle resume;
+neither validator nor receiver changes the boot partition or reports post-boot
+health. Neither is a deployment path by itself.
+
+The complete-package verifier reads the header and CRC, decodes the manifest
+twice using a bounded nanopb flash stream, verifies the P-256 signature and
+feeds every encoded block through the streaming validator. It never keeps a
+whole image or manifest in RAM. It currently accepts full-deflate packages
+only and requires the caller to serialize writes to the source storage.
+Its ESP-IDF compile/link probe passes, but real-package and interruption
+tests on an ESP target remain required before it can authorize vault commits.
 
 The stream API can restart at a verified block-boundary checkpoint. It
 re-reads the raw prefix from the inactive partition to rebuild the final
@@ -53,7 +62,8 @@ stream verifies every remaining encoded block against its signed descriptor
 but does not recompute the redundant whole encoded-payload hash. The final
 signed image hash and descriptor-chain hash are still mandatory. The receiver
 must validate checkpoint metadata and the flash prefix before trusting the
-resume offsets; that receiver is not implemented yet.
+resume offsets; the experimental flash writer does this but is not connected
+to production transport.
 
 The embedded checkpoint journal uses alternating NVS blobs with generation
 and CRC, and a newer tombstone for cancellation. It writes no checkpoint in
