@@ -268,6 +268,142 @@ esp_err_t keemash_ota_v3_flash_receiver_abort(
 	return ESP_OK;
 }
 
+static void operation_bytes(const keemash_fabric_v2_Id128 *id,
+	uint8_t bytes[16])
+{
+	for (size_t i = 0; i < 8U; ++i) {
+		bytes[i] = (uint8_t)(id->high >> (56U - 8U * i));
+		bytes[8U + i] = (uint8_t)(id->low >> (56U - 8U * i));
+	}
+}
+
+static bool matching_transfer(const keemash_ota_v3_flash_receiver_t *receiver,
+	const keemash_fabric_v2_Id128 *id, const uint8_t *artifact_id,
+	size_t artifact_id_len)
+{
+	if (artifact_id_len != KEEMASH_OTA_V3_SHA256_LEN ||
+	    (!receiver->active && !receiver->verified)) return false;
+	uint8_t operation_id[16];
+	operation_bytes(id, operation_id);
+	return same_operation(receiver, operation_id, artifact_id);
+}
+
+static esp_err_t match_persisted_transfer(
+	const keemash_fabric_v2_Id128 *id, const uint8_t *artifact_id,
+	size_t artifact_id_len)
+{
+	if (artifact_id_len != KEEMASH_OTA_V3_SHA256_LEN)
+		return ESP_ERR_INVALID_ARG;
+	keemash_ota_v3_checkpoint_t *checkpoint = malloc(sizeof(*checkpoint));
+	if (!checkpoint) return ESP_ERR_NO_MEM;
+	esp_err_t err = keemash_ota_v3_checkpoint_load(checkpoint);
+	if (err == ESP_OK) {
+		uint8_t operation_id[16];
+		operation_bytes(id, operation_id);
+		if (memcmp(checkpoint->operation_id, operation_id,
+			   sizeof(operation_id)) != 0 ||
+		    memcmp(checkpoint->artifact_id, artifact_id,
+			   KEEMASH_OTA_V3_SHA256_LEN) != 0) {
+			err = ESP_ERR_NOT_FOUND;
+		}
+	}
+	free(checkpoint);
+	return err;
+}
+
+esp_err_t keemash_ota_v3_flash_receiver_handle_transfer(
+	keemash_ota_v3_flash_receiver_t *receiver,
+	const keemash_fabric_v2_OtaTransfer *transfer,
+	const char *project_name, const char *chip_target,
+	uint32_t core_version, uint32_t fabric_schema,
+	keemash_ota_v3_preflight_fn preflight, void *preflight_context,
+	const esp_partition_t **verified_partition)
+{
+	if (!receiver || !transfer || !verified_partition)
+		return ESP_ERR_INVALID_ARG;
+	*verified_partition = NULL;
+	switch (transfer->which_body) {
+	case keemash_fabric_v2_OtaTransfer_prepare_tag: {
+		const keemash_fabric_v2_OtaPrepare *prepare =
+			&transfer->body.prepare;
+		if (!prepare->has_operation_id ||
+		    prepare->artifact_id.size != KEEMASH_OTA_V3_SHA256_LEN ||
+		    prepare->signature.size != KEEMASH_OTA_V3_SIGNATURE_LEN ||
+		    prepare->signed_fields.size == 0U ||
+		    (prepare->requested_chunk_size != 0U &&
+		     prepare->requested_chunk_size != 1024U &&
+		     prepare->requested_chunk_size != 2048U) ||
+		    prepare->requested_window > 4U)
+			return ESP_ERR_INVALID_ARG;
+		uint8_t operation_id[16];
+		operation_bytes(&prepare->operation_id, operation_id);
+		return keemash_ota_v3_flash_receiver_prepare(receiver,
+			operation_id, prepare->artifact_id.bytes,
+			prepare->signed_fields.bytes,
+			prepare->signed_fields.size, prepare->signature.bytes,
+			project_name, chip_target, core_version, fabric_schema,
+			preflight, preflight_context);
+	}
+	case keemash_fabric_v2_OtaTransfer_data_tag: {
+		const keemash_fabric_v2_OtaBlockChunk *data =
+			&transfer->body.data;
+		if (!data->has_operation_id || !data->has_block ||
+		    data->data.size == 0U ||
+		    !matching_transfer(receiver, &data->operation_id,
+			data->artifact_id.bytes, data->artifact_id.size))
+			return ESP_ERR_INVALID_ARG;
+		return keemash_ota_v3_flash_receiver_write(receiver,
+			&data->block, data->block_encoded_offset,
+			data->data.bytes, data->data.size, data->final_chunk);
+	}
+	case keemash_fabric_v2_OtaTransfer_commit_tag: {
+		const keemash_fabric_v2_OtaCommit *commit =
+			&transfer->body.commit;
+		if (!commit->has_operation_id ||
+		    !matching_transfer(receiver, &commit->operation_id,
+			commit->artifact_id.bytes, commit->artifact_id.size) ||
+		    commit->block_table_sha256.size != KEEMASH_OTA_V3_SHA256_LEN ||
+		    commit->image_sha256.size != KEEMASH_OTA_V3_SHA256_LEN ||
+		    memcmp(commit->block_table_sha256.bytes,
+			receiver->fields.block_table_sha256,
+			KEEMASH_OTA_V3_SHA256_LEN) != 0 ||
+		    memcmp(commit->image_sha256.bytes,
+			receiver->fields.image_sha256,
+			KEEMASH_OTA_V3_SHA256_LEN) != 0)
+			return ESP_ERR_INVALID_ARG;
+		if (receiver->verified) {
+			*verified_partition = receiver->partition;
+			return ESP_OK;
+		}
+		return keemash_ota_v3_flash_receiver_verify(receiver,
+			verified_partition);
+	}
+	case keemash_fabric_v2_OtaTransfer_abort_tag: {
+		const keemash_fabric_v2_OtaAbort *abort =
+			&transfer->body.abort;
+		if (!abort->has_operation_id ||
+		    abort->artifact_id.size != KEEMASH_OTA_V3_SHA256_LEN)
+			return ESP_ERR_INVALID_ARG;
+		uint8_t operation_id[16];
+		operation_bytes(&abort->operation_id, operation_id);
+		return keemash_ota_v3_flash_receiver_abort(receiver,
+			operation_id, abort->artifact_id.bytes);
+	}
+	case keemash_fabric_v2_OtaTransfer_query_tag: {
+		const keemash_fabric_v2_OtaQuery *query =
+			&transfer->body.query;
+		if (!query->has_operation_id) return ESP_ERR_INVALID_ARG;
+		if (matching_transfer(receiver, &query->operation_id,
+			query->artifact_id.bytes, query->artifact_id.size))
+			return ESP_OK;
+		return match_persisted_transfer(&query->operation_id,
+			query->artifact_id.bytes, query->artifact_id.size);
+	}
+	default:
+		return ESP_ERR_NOT_SUPPORTED;
+	}
+}
+
 void keemash_ota_v3_flash_receiver_status(
 	const keemash_ota_v3_flash_receiver_t *receiver,
 	keemash_ota_v3_flash_status_t *status)

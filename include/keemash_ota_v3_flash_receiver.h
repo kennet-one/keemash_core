@@ -56,6 +56,17 @@ esp_err_t keemash_ota_v3_flash_receiver_abort(
 	const uint8_t operation_id[16],
 	const uint8_t artifact_id[KEEMASH_OTA_V3_SHA256_LEN]);
 
+/* Decode/validate one typed mesh transfer on a dedicated OTA worker. A
+ * successful COMMIT returns a verified inactive partition; the caller owns
+ * safety recheck, boot selection, status delivery and reboot. */
+esp_err_t keemash_ota_v3_flash_receiver_handle_transfer(
+	keemash_ota_v3_flash_receiver_t *receiver,
+	const keemash_fabric_v2_OtaTransfer *transfer,
+	const char *project_name, const char *chip_target,
+	uint32_t core_version, uint32_t fabric_schema,
+	keemash_ota_v3_preflight_fn preflight, void *preflight_context,
+	const esp_partition_t **verified_partition);
+
 void keemash_ota_v3_flash_receiver_status(
 	const keemash_ota_v3_flash_receiver_t *receiver,
 	keemash_ota_v3_flash_status_t *status);
