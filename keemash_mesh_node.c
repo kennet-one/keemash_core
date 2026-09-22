@@ -2,6 +2,7 @@
 #include "keemash_mesh_node.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -21,6 +22,7 @@
 #include "keemash_mesh_core.h"
 #include "keemash_mesh_hooks.h"
 #include "keemash_mesh_ota_receiver.h"
+#include "keemash_mesh_ota_v3_receiver.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 
@@ -270,9 +272,20 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		(void)mesh_v2_node_send_memory();
 		return;
 	}
-	if (channel == MESH_V2_TUNNEL_CHANNEL_OTA &&
-	    payload_len >= sizeof(mesh_v2_ota_common_payload_t)) {
-		(void)keemash_mesh_ota_receiver_handle_v2(payload, payload_len);
+	if (channel == MESH_V2_TUNNEL_CHANNEL_OTA) {
+#if CONFIG_KEEMASH_OTA_V3_ENABLE
+		const uint8_t *ota_bytes = payload;
+		/* OTA v2 starts with a fixed operation byte in the 1..5 range.
+		 * The protobuf OtaMeshMessage starts with a length-delimited tag. */
+		if (payload_len > 0U && ota_bytes[0] > MESH_V2_OTA_OP_STATUS) {
+			(void)keemash_mesh_ota_v3_receiver_handle(payload,
+				payload_len);
+			return;
+		}
+#endif
+		if (payload_len >= sizeof(mesh_v2_ota_common_payload_t)) {
+			(void)keemash_mesh_ota_receiver_handle_v2(payload, payload_len);
+		}
 		return;
 	}
 	if (channel == MESH_V2_TUNNEL_CHANNEL_TIME &&
@@ -1569,6 +1582,44 @@ esp_err_t mesh_v2_node_send_ota_status(const mesh_v2_ota_status_payload_t *statu
 		MESH_V2_TUNNEL_CHANNEL_OTA, status, sizeof(*status),
 		KEEMASH_REL_PRIORITY_OTA);
 	xSemaphoreGiveRecursive(s_rel_lock);
+	return err;
+}
+
+esp_err_t mesh_v2_node_send_ota_v3_message(
+	const keemash_fabric_v2_OtaMeshMessage *message)
+{
+	if (!message || !s_rel || !s_rel_lock) return ESP_ERR_INVALID_STATE;
+	uint8_t *wire = malloc(keemash_fabric_v2_OtaMeshMessage_size);
+	if (!wire) return ESP_ERR_NO_MEM;
+	size_t wire_len = 0U;
+	esp_err_t err = keemash_ota_v3_encode_mesh_message(message, wire,
+		keemash_fabric_v2_OtaMeshMessage_size, &wire_len);
+	if (err == ESP_OK) {
+		const uint8_t root[6] = {0};
+		if (xSemaphoreTakeRecursive(s_rel_lock,
+			pdMS_TO_TICKS(1000)) != pdTRUE) {
+			err = ESP_ERR_TIMEOUT;
+		} else {
+			err = keemash_rel_send(s_rel, root,
+				MESH_V2_TUNNEL_CHANNEL_OTA, wire, wire_len,
+				KEEMASH_REL_PRIORITY_OTA);
+			xSemaphoreGiveRecursive(s_rel_lock);
+		}
+	}
+	free(wire);
+	return err;
+}
+
+esp_err_t mesh_v2_node_fabric_identity(keemash_fabric_id_t *node_id,
+	uint64_t *boot_session)
+{
+	if (!node_id || !boot_session || !s_rel) return ESP_ERR_INVALID_ARG;
+	uint8_t root[6];
+	uint8_t node[6];
+	if (!mesh_v2_node_get_root_mac(root)) return ESP_ERR_INVALID_STATE;
+	local_mac(node);
+	esp_err_t err = keemash_fabric_legacy_node_id(root, node, node_id);
+	if (err == ESP_OK) *boot_session = keemash_rel_local_session(s_rel);
 	return err;
 }
 

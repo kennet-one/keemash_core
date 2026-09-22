@@ -152,10 +152,11 @@ menu "KeeMASH Reliable Mesh"
         bool "Enable OTA v3 signed artifact foundation (experimental)"
         default n
         help
-            Compile signed-field and inactive-slot writer helpers for OTA v3
-            development. This does not connect a receiver to mesh traffic,
-            switch the boot partition, or advertise OTA v3 capability;
-            existing OTA v2 remains the only deployed update path.
+            Compile the signed artifact verifier, persistent inactive-slot
+            receiver and typed mesh worker for OTA v3 development. Node
+            firmware must explicitly start the worker and advertise the OTA
+            v3 capability only after startup succeeds. Existing OTA v2 stays
+            available as the migration/bootstrap path.
 
     config KEEMASH_OTA_V3_TRUSTED_P256_PUBKEY_HEX
         string "Trusted OTA v3 P-256 public key (SEC1 hex)"

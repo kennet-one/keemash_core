@@ -7,6 +7,7 @@ idf_component_register(
          "keemash_mesh_log_stream.c"
          "keemash_mesh_time.c"
          "keemash_mesh_ota_receiver.c"
+         "keemash_mesh_ota_v3_receiver.c"
          "keemash_ota_v3.c"
          "keemash_ota_v3_inflate.c"
          "keemash_ota_v3_stream.c"

@@ -7,6 +7,7 @@
 
 #include "esp_err.h"
 #include "keemash_mesh_core.h"
+#include "keemash_fabric.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,6 +75,10 @@ esp_err_t mesh_v2_node_send_memory(void);
 esp_err_t mesh_v2_node_send_sensor_snapshot(
 	const mesh_v2_sensor_snapshot_payload_t *snapshot);
 esp_err_t mesh_v2_node_send_ota_status(const mesh_v2_ota_status_payload_t *status);
+esp_err_t mesh_v2_node_send_ota_v3_message(
+	const keemash_fabric_v2_OtaMeshMessage *message);
+esp_err_t mesh_v2_node_fabric_identity(keemash_fabric_id_t *node_id,
+	uint64_t *boot_session);
 esp_err_t mesh_v2_node_send_event(uint32_t command_id, const char *text);
 bool mesh_v2_node_reliable_ready(void);
 bool mesh_v2_node_reliable_stats(keemash_rel_stats_t *out);
