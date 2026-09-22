@@ -1,4 +1,4 @@
-version: "0.10.0"
+version: "0.10.0-rc.2"
 description: "KeeMASH reliable mesh and low-latency Fabric core"
 license: "GPL-2.0-only"
 dependencies:
