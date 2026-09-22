@@ -85,6 +85,14 @@ esp_err_t keemash_ota_v3_decode_transfer(
 	const uint8_t *data, size_t length,
 	keemash_fabric_v2_OtaTransfer *message);
 
+esp_err_t keemash_ota_v3_encode_mesh_message(
+	const keemash_fabric_v2_OtaMeshMessage *message,
+	uint8_t *out, size_t capacity, size_t *written);
+
+esp_err_t keemash_ota_v3_decode_mesh_message(
+	const uint8_t *data, size_t length,
+	keemash_fabric_v2_OtaMeshMessage *message);
+
 esp_err_t keemash_ota_v3_encode_block_descriptor(
 	const keemash_fabric_v2_FirmwareBlockDescriptor *descriptor,
 	uint8_t *out, size_t capacity, size_t *written,

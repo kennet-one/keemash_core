@@ -11,7 +11,7 @@
 #include "sdkconfig.h"
 
 #define CHECKPOINT_MAGIC 0x334f544bU
-#define CHECKPOINT_VERSION 1U
+#define CHECKPOINT_VERSION 2U
 #define CHECKPOINT_NAMESPACE "km_ota3"
 
 #ifdef CONFIG_KEEMASH_OTA_V3_CHECKPOINT_BYTES
@@ -53,10 +53,21 @@ static bool record_valid(const stored_checkpoint_t *record)
 	if (crc != record->crc32) return false;
 	if (record->tombstone) return true;
 	const keemash_ota_v3_checkpoint_t *cp = &record->checkpoint;
-	return cp->signed_fields_len > 0U &&
-		cp->signed_fields_len <= KEEMASH_OTA_V3_SIGNED_FIELDS_MAX &&
-		cp->partition_label[0] != '\0' &&
-		memchr(cp->partition_label, '\0', sizeof(cp->partition_label)) != NULL &&
+	if (cp->phase < KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING ||
+	    cp->phase > KEEMASH_OTA_V3_CHECKPOINT_BOOT_PENDING ||
+	    cp->signed_fields_len == 0U ||
+	    cp->signed_fields_len > KEEMASH_OTA_V3_SIGNED_FIELDS_MAX ||
+	    cp->partition_label[0] == '\0' ||
+	    memchr(cp->partition_label, '\0', sizeof(cp->partition_label)) == NULL)
+		return false;
+	if (cp->phase != KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING)
+		return cp->resume.raw_offset > 0U &&
+			cp->resume.raw_offset <= KEEMASH_OTA_V3_MAX_IMAGE_SIZE &&
+			cp->resume.encoded_offset > 0U &&
+			cp->resume.encoded_offset <= KEEMASH_OTA_V3_MAX_PACKAGE_SIZE &&
+			cp->resume.next_block_index > 0U &&
+			cp->resume.next_block_index <= KEEMASH_OTA_V3_MAX_BLOCK_COUNT;
+	return
 		cp->resume.next_block_index > 0U &&
 		cp->resume.next_block_index < KEEMASH_OTA_V3_MAX_BLOCK_COUNT &&
 		cp->resume.raw_offset > 0U &&
@@ -162,12 +173,27 @@ static esp_err_t write_record(const keemash_ota_v3_checkpoint_t *checkpoint,
 esp_err_t keemash_ota_v3_checkpoint_save(
 	const keemash_ota_v3_checkpoint_t *checkpoint)
 {
-	if (!checkpoint || checkpoint->signed_fields_len == 0U ||
+	if (!checkpoint ||
+	    checkpoint->phase < KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING ||
+	    checkpoint->phase > KEEMASH_OTA_V3_CHECKPOINT_BOOT_PENDING ||
+	    checkpoint->signed_fields_len == 0U ||
 	    checkpoint->signed_fields_len > KEEMASH_OTA_V3_SIGNED_FIELDS_MAX ||
 	    checkpoint->partition_label[0] == '\0' ||
 	    memchr(checkpoint->partition_label, '\0',
-		   sizeof(checkpoint->partition_label)) == NULL ||
-	    checkpoint->resume.next_block_index == 0U ||
+		   sizeof(checkpoint->partition_label)) == NULL) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	if (checkpoint->phase != KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING) {
+		if (checkpoint->resume.next_block_index == 0U ||
+		    checkpoint->resume.next_block_index > KEEMASH_OTA_V3_MAX_BLOCK_COUNT ||
+		    checkpoint->resume.raw_offset == 0U ||
+		    checkpoint->resume.raw_offset > KEEMASH_OTA_V3_MAX_IMAGE_SIZE ||
+		    checkpoint->resume.encoded_offset == 0U ||
+		    checkpoint->resume.encoded_offset > KEEMASH_OTA_V3_MAX_PACKAGE_SIZE)
+			return ESP_ERR_INVALID_ARG;
+		return write_record(checkpoint, false);
+	}
+	if (checkpoint->resume.next_block_index == 0U ||
 	    checkpoint->resume.next_block_index >= KEEMASH_OTA_V3_MAX_BLOCK_COUNT ||
 	    checkpoint->resume.raw_offset == 0U ||
 	    checkpoint->resume.raw_offset % CHECKPOINT_INTERVAL != 0U ||

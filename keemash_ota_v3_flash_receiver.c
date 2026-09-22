@@ -30,6 +30,43 @@ struct keemash_ota_v3_flash_receiver {
 	bool resumed;
 };
 
+static void fill_checkpoint(const keemash_ota_v3_flash_receiver_t *receiver,
+	keemash_ota_v3_checkpoint_phase_t phase,
+	keemash_ota_v3_checkpoint_t *checkpoint)
+{
+	memset(checkpoint, 0, sizeof(*checkpoint));
+	checkpoint->phase = (uint8_t)phase;
+	memcpy(checkpoint->operation_id, receiver->operation_id, 16U);
+	memcpy(checkpoint->artifact_id, receiver->artifact_id,
+	       KEEMASH_OTA_V3_SHA256_LEN);
+	memcpy(checkpoint->signature, receiver->signature,
+	       KEEMASH_OTA_V3_SIGNATURE_LEN);
+	checkpoint->signed_fields_len = (uint16_t)receiver->signed_fields_len;
+	memcpy(checkpoint->signed_fields, receiver->signed_fields,
+	       receiver->signed_fields_len);
+	strncpy(checkpoint->partition_label, receiver->partition->label,
+		sizeof(checkpoint->partition_label) - 1U);
+}
+
+static esp_err_t save_terminal_checkpoint(
+	const keemash_ota_v3_flash_receiver_t *receiver,
+	keemash_ota_v3_checkpoint_phase_t phase)
+{
+	keemash_ota_v3_checkpoint_t *checkpoint = calloc(1U, sizeof(*checkpoint));
+	if (!checkpoint) return ESP_ERR_NO_MEM;
+	fill_checkpoint(receiver, phase, checkpoint);
+	checkpoint->resume.next_block_index = receiver->fields.block_count;
+	checkpoint->resume.raw_offset = receiver->fields.raw_size;
+	checkpoint->resume.encoded_offset = receiver->fields.encoded_size;
+	memcpy(checkpoint->resume.block_chain,
+	       receiver->fields.block_table_sha256, KEEMASH_OTA_V3_SHA256_LEN);
+	memcpy(checkpoint->resume.image_prefix_sha256,
+	       receiver->fields.image_sha256, KEEMASH_OTA_V3_SHA256_LEN);
+	esp_err_t err = keemash_ota_v3_checkpoint_save(checkpoint);
+	free(checkpoint);
+	return err;
+}
+
 static esp_err_t flash_output(const uint8_t *bytes, size_t length, void *context)
 {
 	keemash_ota_v3_flash_receiver_t *receiver = context;
@@ -129,7 +166,21 @@ esp_err_t keemash_ota_v3_flash_receiver_prepare(
 		free(checkpoint);
 		return checkpoint_err;
 	}
-	bool resume = checkpoint_err == ESP_OK;
+	bool resume = checkpoint_err == ESP_OK &&
+		checkpoint->phase == KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING;
+	bool terminal = checkpoint_err == ESP_OK && !resume;
+	if (terminal &&
+	    (memcmp(checkpoint->operation_id, operation_id, 16U) != 0 ||
+	     memcmp(checkpoint->artifact_id, artifact_id,
+		    KEEMASH_OTA_V3_SHA256_LEN) != 0 ||
+	     checkpoint->signed_fields_len != signed_fields_len ||
+	     memcmp(checkpoint->signed_fields, signed_fields,
+		    signed_fields_len) != 0 ||
+	     memcmp(checkpoint->signature, signature,
+		    KEEMASH_OTA_V3_SIGNATURE_LEN) != 0)) {
+		free(checkpoint);
+		return ESP_ERR_INVALID_STATE;
+	}
 	if (resume &&
 	    (memcmp(checkpoint->operation_id, operation_id, 16U) != 0 ||
 	     memcmp(checkpoint->artifact_id, artifact_id,
@@ -142,6 +193,28 @@ esp_err_t keemash_ota_v3_flash_receiver_prepare(
 	     strcmp(checkpoint->partition_label, partition->label) != 0)) {
 		free(checkpoint);
 		return ESP_ERR_INVALID_STATE;
+	}
+	if (terminal) {
+		const esp_partition_t *saved_partition = esp_partition_find_first(
+			ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY,
+			checkpoint->partition_label);
+		if (!saved_partition) {
+			free(checkpoint);
+			return ESP_ERR_NOT_FOUND;
+		}
+		receiver->partition = saved_partition;
+		receiver->fields = fields;
+		memcpy(receiver->operation_id, operation_id, 16U);
+		memcpy(receiver->artifact_id, artifact_id,
+		       KEEMASH_OTA_V3_SHA256_LEN);
+		memcpy(receiver->signature, signature,
+		       KEEMASH_OTA_V3_SIGNATURE_LEN);
+		memcpy(receiver->signed_fields, signed_fields, signed_fields_len);
+		receiver->signed_fields_len = signed_fields_len;
+		receiver->verified = true;
+		receiver->resumed = true;
+		free(checkpoint);
+		return ESP_OK;
 	}
 	receiver->stream = calloc(1U, sizeof(*receiver->stream));
 	if (!receiver->stream) {
@@ -203,16 +276,8 @@ esp_err_t keemash_ota_v3_flash_receiver_write(
 	}
 	keemash_ota_v3_checkpoint_t *checkpoint = calloc(1U, sizeof(*checkpoint));
 	if (!checkpoint) return fail_receiver(receiver, ESP_ERR_NO_MEM);
-	memcpy(checkpoint->operation_id, receiver->operation_id, 16U);
-	memcpy(checkpoint->artifact_id, receiver->artifact_id,
-	       KEEMASH_OTA_V3_SHA256_LEN);
-	memcpy(checkpoint->signature, receiver->signature,
-	       KEEMASH_OTA_V3_SIGNATURE_LEN);
-	checkpoint->signed_fields_len = (uint16_t)receiver->signed_fields_len;
-	memcpy(checkpoint->signed_fields, receiver->signed_fields,
-	       receiver->signed_fields_len);
-	strncpy(checkpoint->partition_label, receiver->partition->label,
-		sizeof(checkpoint->partition_label) - 1U);
+	fill_checkpoint(receiver, KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING,
+		checkpoint);
 	err = keemash_ota_v3_stream_checkpoint(receiver->stream,
 		&checkpoint->resume);
 	if (err == ESP_OK) err = keemash_ota_v3_checkpoint_save(checkpoint);
@@ -235,8 +300,33 @@ esp_err_t keemash_ota_v3_flash_receiver_verify(
 	receiver->active = false;
 	if (err != ESP_OK) return fail_receiver(receiver, err);
 	receiver->verified = true;
+	err = save_terminal_checkpoint(receiver,
+		KEEMASH_OTA_V3_CHECKPOINT_VERIFIED);
+	if (err != ESP_OK) {
+		(void)keemash_ota_v3_checkpoint_clear();
+		reset_receiver(receiver);
+		return err;
+	}
 	*verified_partition = receiver->partition;
 	return ESP_OK;
+}
+
+esp_err_t keemash_ota_v3_flash_receiver_activate(
+	keemash_ota_v3_flash_receiver_t *receiver,
+	keemash_ota_v3_preflight_fn preflight, void *preflight_context)
+{
+	if (!receiver || receiver->active || !receiver->verified ||
+	    !receiver->partition || !preflight) return ESP_ERR_INVALID_STATE;
+	esp_err_t err = preflight(preflight_context);
+	if (err != ESP_OK) return err;
+	err = save_terminal_checkpoint(receiver,
+		KEEMASH_OTA_V3_CHECKPOINT_BOOT_PENDING);
+	if (err != ESP_OK) return err;
+	err = esp_ota_set_boot_partition(receiver->partition);
+	if (err == ESP_OK) return ESP_OK;
+	esp_err_t restore_err = save_terminal_checkpoint(receiver,
+		KEEMASH_OTA_V3_CHECKPOINT_VERIFIED);
+	return restore_err == ESP_OK ? err : restore_err;
 }
 
 esp_err_t keemash_ota_v3_flash_receiver_abort(

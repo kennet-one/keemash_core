@@ -108,6 +108,12 @@ PB_BIND(keemash_fabric_v2_OtaTransfer, keemash_fabric_v2_OtaTransfer, 2)
 PB_BIND(keemash_fabric_v2_OtaBootReport, keemash_fabric_v2_OtaBootReport, AUTO)
 
 
+PB_BIND(keemash_fabric_v2_OtaBootAck, keemash_fabric_v2_OtaBootAck, AUTO)
+
+
+PB_BIND(keemash_fabric_v2_OtaMeshMessage, keemash_fabric_v2_OtaMeshMessage, 2)
+
+
 PB_BIND(keemash_fabric_v2_Envelope, keemash_fabric_v2_Envelope, 2)
 
 

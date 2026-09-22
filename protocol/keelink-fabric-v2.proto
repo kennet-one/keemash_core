@@ -453,6 +453,20 @@ message OtaBootReport {
   string message = 9;
 }
 
+message OtaBootAck {
+  Id128 operation_id = 1;
+  bytes artifact_id = 2;
+  OtaBootState state = 3;
+}
+
+message OtaMeshMessage {
+  oneof body {
+    OtaTransfer transfer = 1;
+    OtaBootReport boot_report = 2;
+    OtaBootAck boot_ack = 3;
+  }
+}
+
 message Envelope {
   uint32 protocol_version = 1;
   TrafficClass traffic_class = 2;

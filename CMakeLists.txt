@@ -13,6 +13,7 @@ idf_component_register(
          "keemash_ota_v3_package.c"
          "keemash_ota_v3_checkpoint.c"
          "keemash_ota_v3_flash_receiver.c"
+         "keemash_ota_v3_boot.c"
          "keemash_mesh_tx_broker.c"
          "keemash_mesh_event_outbox.c"
          "keemash_mesh_network.c"

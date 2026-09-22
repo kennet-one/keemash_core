@@ -437,4 +437,29 @@ mod tests {
         assert_ne!(first, second);
         assert_ne!(first.high | first.low, 0);
     }
+
+    #[test]
+    fn ota_mesh_boot_report_round_trips_without_transfer_ambiguity() {
+        use prost::Message;
+
+        let operation = new_operation_id();
+        let message = fabric::OtaMeshMessage {
+            body: Some(fabric::ota_mesh_message::Body::BootReport(
+                fabric::OtaBootReport {
+                    operation_id: Some(operation),
+                    artifact_id: vec![0x5a; 32],
+                    firmware_version: "canary".into(),
+                    state: fabric::OtaBootState::OtaBootValidated as i32,
+                    ..Default::default()
+                },
+            )),
+        };
+        let encoded = message.encode_to_vec();
+        let decoded = fabric::OtaMeshMessage::decode(encoded.as_slice()).unwrap();
+        assert_eq!(decoded, message);
+        assert!(matches!(
+            decoded.body,
+            Some(fabric::ota_mesh_message::Body::BootReport(_))
+        ));
+    }
 }

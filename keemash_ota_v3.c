@@ -210,6 +210,36 @@ esp_err_t keemash_ota_v3_decode_transfer(
 		? ESP_OK : ESP_ERR_INVALID_RESPONSE;
 }
 
+esp_err_t keemash_ota_v3_encode_mesh_message(
+	const keemash_fabric_v2_OtaMeshMessage *message,
+	uint8_t *out, size_t capacity, size_t *written)
+{
+	if (!message || !out || !written || capacity == 0U)
+		return ESP_ERR_INVALID_ARG;
+	pb_ostream_t stream = pb_ostream_from_buffer(out, capacity);
+	if (!pb_encode(&stream, keemash_fabric_v2_OtaMeshMessage_fields,
+		       message)) {
+		return stream.bytes_written >= capacity ? ESP_ERR_INVALID_SIZE :
+			ESP_FAIL;
+	}
+	*written = stream.bytes_written;
+	return ESP_OK;
+}
+
+esp_err_t keemash_ota_v3_decode_mesh_message(
+	const uint8_t *data, size_t length,
+	keemash_fabric_v2_OtaMeshMessage *message)
+{
+	if (!data || length == 0U || !message ||
+	    length > keemash_fabric_v2_OtaMeshMessage_size)
+		return ESP_ERR_INVALID_ARG;
+	*message = (keemash_fabric_v2_OtaMeshMessage)
+		keemash_fabric_v2_OtaMeshMessage_init_zero;
+	pb_istream_t stream = pb_istream_from_buffer(data, length);
+	return pb_decode(&stream, keemash_fabric_v2_OtaMeshMessage_fields,
+		message) ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
+}
+
 static size_t encode_varint(uint64_t value, uint8_t out[10])
 {
 	size_t count = 0;

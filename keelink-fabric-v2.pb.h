@@ -341,8 +341,6 @@ typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_imag
 typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_encoded_sha256_t;
 typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_block_table_sha256_t;
 typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_FirmwareArtifactSignedFields_base_image_sha256_t;
-/* The exact bytes of this message are signed. The outer manifest stores those
- bytes verbatim so embedded targets never need to reproduce host encoding. */
 typedef struct _keemash_fabric_v2_FirmwareArtifactSignedFields {
     uint32_t schema_version;
     char project_name[33];
@@ -533,6 +531,23 @@ typedef struct _keemash_fabric_v2_OtaBootReport {
     char message[97];
 } keemash_fabric_v2_OtaBootReport;
 
+typedef PB_BYTES_ARRAY_T(32) keemash_fabric_v2_OtaBootAck_artifact_id_t;
+typedef struct _keemash_fabric_v2_OtaBootAck {
+    bool has_operation_id;
+    keemash_fabric_v2_Id128 operation_id;
+    keemash_fabric_v2_OtaBootAck_artifact_id_t artifact_id;
+    keemash_fabric_v2_OtaBootState state;
+} keemash_fabric_v2_OtaBootAck;
+
+typedef struct _keemash_fabric_v2_OtaMeshMessage {
+    pb_size_t which_body;
+    union {
+        keemash_fabric_v2_OtaTransfer transfer;
+        keemash_fabric_v2_OtaBootReport boot_report;
+        keemash_fabric_v2_OtaBootAck boot_ack;
+    } body;
+} keemash_fabric_v2_OtaMeshMessage;
+
 typedef struct _keemash_fabric_v2_Envelope {
     uint32_t protocol_version;
     keemash_fabric_v2_TrafficClass traffic_class;
@@ -666,6 +681,9 @@ extern "C" {
 
 #define keemash_fabric_v2_OtaBootReport_state_ENUMTYPE keemash_fabric_v2_OtaBootState
 
+#define keemash_fabric_v2_OtaBootAck_state_ENUMTYPE keemash_fabric_v2_OtaBootState
+
+
 #define keemash_fabric_v2_Envelope_traffic_class_ENUMTYPE keemash_fabric_v2_TrafficClass
 #define keemash_fabric_v2_Envelope_delivery_ENUMTYPE keemash_fabric_v2_DeliveryMode
 
@@ -705,6 +723,8 @@ extern "C" {
 #define keemash_fabric_v2_OtaTransferStatus_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_OtaTransfer_init_default {0, {keemash_fabric_v2_OtaPrepare_init_default}}
 #define keemash_fabric_v2_OtaBootReport_init_default {false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, {0, {0}}, 0, "", _keemash_fabric_v2_OtaBootState_MIN, 0, 0, ""}
+#define keemash_fabric_v2_OtaBootAck_init_default {false, keemash_fabric_v2_Id128_init_default, {0, {0}}, _keemash_fabric_v2_OtaBootState_MIN}
+#define keemash_fabric_v2_OtaMeshMessage_init_default {0, {keemash_fabric_v2_OtaTransfer_init_default}}
 #define keemash_fabric_v2_Envelope_init_default  {0, _keemash_fabric_v2_TrafficClass_MIN, _keemash_fabric_v2_DeliveryMode_MIN, 0, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, false, keemash_fabric_v2_Id128_init_default, 0, 0, 0, 0, {keemash_fabric_v2_Hello_init_default}}
 #define keemash_fabric_v2_Id128_init_zero        {0, 0}
 #define keemash_fabric_v2_ResumeCursor_init_zero {_keemash_fabric_v2_TrafficClass_MIN, 0}
@@ -740,6 +760,8 @@ extern "C" {
 #define keemash_fabric_v2_OtaTransferStatus_init_zero {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, _keemash_fabric_v2_OtaPhase_MIN, 0, 0, 0, 0, 0, 0, 0, ""}
 #define keemash_fabric_v2_OtaTransfer_init_zero  {0, {keemash_fabric_v2_OtaPrepare_init_zero}}
 #define keemash_fabric_v2_OtaBootReport_init_zero {false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, 0, "", _keemash_fabric_v2_OtaBootState_MIN, 0, 0, ""}
+#define keemash_fabric_v2_OtaBootAck_init_zero   {false, keemash_fabric_v2_Id128_init_zero, {0, {0}}, _keemash_fabric_v2_OtaBootState_MIN}
+#define keemash_fabric_v2_OtaMeshMessage_init_zero {0, {keemash_fabric_v2_OtaTransfer_init_zero}}
 #define keemash_fabric_v2_Envelope_init_zero     {0, _keemash_fabric_v2_TrafficClass_MIN, _keemash_fabric_v2_DeliveryMode_MIN, 0, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, false, keemash_fabric_v2_Id128_init_zero, 0, 0, 0, 0, {keemash_fabric_v2_Hello_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -994,6 +1016,12 @@ extern "C" {
 #define keemash_fabric_v2_OtaBootReport_rollback_state_tag 7
 #define keemash_fabric_v2_OtaBootReport_health_status_tag 8
 #define keemash_fabric_v2_OtaBootReport_message_tag 9
+#define keemash_fabric_v2_OtaBootAck_operation_id_tag 1
+#define keemash_fabric_v2_OtaBootAck_artifact_id_tag 2
+#define keemash_fabric_v2_OtaBootAck_state_tag   3
+#define keemash_fabric_v2_OtaMeshMessage_transfer_tag 1
+#define keemash_fabric_v2_OtaMeshMessage_boot_report_tag 2
+#define keemash_fabric_v2_OtaMeshMessage_boot_ack_tag 3
 #define keemash_fabric_v2_Envelope_protocol_version_tag 1
 #define keemash_fabric_v2_Envelope_traffic_class_tag 2
 #define keemash_fabric_v2_Envelope_delivery_tag  3
@@ -1456,6 +1484,24 @@ X(a, STATIC,   SINGULAR, STRING,   message,           9)
 #define keemash_fabric_v2_OtaBootReport_operation_id_MSGTYPE keemash_fabric_v2_Id128
 #define keemash_fabric_v2_OtaBootReport_node_id_MSGTYPE keemash_fabric_v2_Id128
 
+#define keemash_fabric_v2_OtaBootAck_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  operation_id,      1) \
+X(a, STATIC,   SINGULAR, BYTES,    artifact_id,       2) \
+X(a, STATIC,   SINGULAR, UENUM,    state,             3)
+#define keemash_fabric_v2_OtaBootAck_CALLBACK NULL
+#define keemash_fabric_v2_OtaBootAck_DEFAULT NULL
+#define keemash_fabric_v2_OtaBootAck_operation_id_MSGTYPE keemash_fabric_v2_Id128
+
+#define keemash_fabric_v2_OtaMeshMessage_FIELDLIST(X, a) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,transfer,body.transfer),   1) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,boot_report,body.boot_report),   2) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,boot_ack,body.boot_ack),   3)
+#define keemash_fabric_v2_OtaMeshMessage_CALLBACK NULL
+#define keemash_fabric_v2_OtaMeshMessage_DEFAULT NULL
+#define keemash_fabric_v2_OtaMeshMessage_body_transfer_MSGTYPE keemash_fabric_v2_OtaTransfer
+#define keemash_fabric_v2_OtaMeshMessage_body_boot_report_MSGTYPE keemash_fabric_v2_OtaBootReport
+#define keemash_fabric_v2_OtaMeshMessage_body_boot_ack_MSGTYPE keemash_fabric_v2_OtaBootAck
+
 #define keemash_fabric_v2_Envelope_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   protocol_version,   1) \
 X(a, STATIC,   SINGULAR, UENUM,    traffic_class,     2) \
@@ -1545,6 +1591,8 @@ extern const pb_msgdesc_t keemash_fabric_v2_OtaQuery_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_OtaTransferStatus_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_OtaTransfer_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_OtaBootReport_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaBootAck_msg;
+extern const pb_msgdesc_t keemash_fabric_v2_OtaMeshMessage_msg;
 extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
@@ -1582,6 +1630,8 @@ extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 #define keemash_fabric_v2_OtaTransferStatus_fields &keemash_fabric_v2_OtaTransferStatus_msg
 #define keemash_fabric_v2_OtaTransfer_fields &keemash_fabric_v2_OtaTransfer_msg
 #define keemash_fabric_v2_OtaBootReport_fields &keemash_fabric_v2_OtaBootReport_msg
+#define keemash_fabric_v2_OtaBootAck_fields &keemash_fabric_v2_OtaBootAck_msg
+#define keemash_fabric_v2_OtaMeshMessage_fields &keemash_fabric_v2_OtaMeshMessage_msg
 #define keemash_fabric_v2_Envelope_fields &keemash_fabric_v2_Envelope_msg
 
 /* Maximum encoded size of messages (where known) */
@@ -1603,11 +1653,13 @@ extern const pb_msgdesc_t keemash_fabric_v2_Envelope_msg;
 #define keemash_fabric_v2_NodeDescriptor_size    147
 #define keemash_fabric_v2_OtaAbort_size          120
 #define keemash_fabric_v2_OtaBlockChunk_size     2215
+#define keemash_fabric_v2_OtaBootAck_size        56
 #define keemash_fabric_v2_OtaBootReport_size     229
 #define keemash_fabric_v2_OtaCancelRequest_size  106
 #define keemash_fabric_v2_OtaCommit_size         122
 #define keemash_fabric_v2_OtaDeployRequest_size  76
 #define keemash_fabric_v2_OtaDeployStatus_size   228
+#define keemash_fabric_v2_OtaMeshMessage_size    2221
 #define keemash_fabric_v2_OtaPrepare_size        1159
 #define keemash_fabric_v2_OtaQuery_size          54
 #define keemash_fabric_v2_OtaStageChunk_size     2605

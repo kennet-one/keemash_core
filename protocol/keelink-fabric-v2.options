@@ -62,3 +62,4 @@ keemash.fabric.v2.OtaTransferStatus.message max_length:96
 keemash.fabric.v2.OtaBootReport.artifact_id max_size:32
 keemash.fabric.v2.OtaBootReport.firmware_version max_length:32
 keemash.fabric.v2.OtaBootReport.message max_length:96
+keemash.fabric.v2.OtaBootAck.artifact_id max_size:32

@@ -51,6 +51,12 @@ esp_err_t keemash_ota_v3_flash_receiver_verify(
 	keemash_ota_v3_flash_receiver_t *receiver,
 	const esp_partition_t **verified_partition);
 
+/* Rechecks node safety, persists BOOT_PENDING and selects the verified image.
+ * It never reboots; the caller first sends a reliable status/result. */
+esp_err_t keemash_ota_v3_flash_receiver_activate(
+	keemash_ota_v3_flash_receiver_t *receiver,
+	keemash_ota_v3_preflight_fn preflight, void *preflight_context);
+
 esp_err_t keemash_ota_v3_flash_receiver_abort(
 	keemash_ota_v3_flash_receiver_t *receiver,
 	const uint8_t operation_id[16],

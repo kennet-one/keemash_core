@@ -12,7 +12,15 @@ extern "C" {
 
 #define KEEMASH_OTA_V3_SIGNED_FIELDS_MAX 1024U
 
+typedef enum {
+	KEEMASH_OTA_V3_CHECKPOINT_TRANSFERRING = 1,
+	KEEMASH_OTA_V3_CHECKPOINT_VERIFIED = 2,
+	KEEMASH_OTA_V3_CHECKPOINT_BOOT_PENDING = 3,
+} keemash_ota_v3_checkpoint_phase_t;
+
 typedef struct {
+	uint8_t phase;
+	uint8_t reserved[3];
 	uint8_t operation_id[16];
 	uint8_t artifact_id[KEEMASH_OTA_V3_SHA256_LEN];
 	uint8_t signature[KEEMASH_OTA_V3_SIGNATURE_LEN];
