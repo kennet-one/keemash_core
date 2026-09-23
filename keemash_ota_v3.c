@@ -7,6 +7,7 @@
 #include "sdkconfig.h"
 #include "mbedtls/md.h"
 #include "pb_decode.h"
+#include "esp_log.h"
 #include "pb_encode.h"
 #include "psa/crypto.h"
 
@@ -101,6 +102,8 @@ esp_err_t keemash_ota_v3_verify_signed_fields(
 	if (!pb_decode(&stream,
 		       keemash_fabric_v2_FirmwareArtifactSignedFields_fields,
 		       &fields)) {
+		ESP_LOGW("ota3_verify", "signed fields decode failed: %s",
+			PB_GET_ERROR(&stream));
 		return ESP_ERR_INVALID_RESPONSE;
 	}
 	if (fields.schema_version != KEEMASH_OTA_V3_SCHEMA_VERSION ||

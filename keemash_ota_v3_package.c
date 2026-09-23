@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_log.h"
 #include "pb_decode.h"
 
 #define KOTA3_HEADER_SIZE 16U
@@ -182,6 +183,11 @@ static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 	};
 	if (!pb_decode(&input, keemash_fabric_v2_FirmwareArtifactManifest_fields,
 		manifest) || source.offset != source.end) {
+		ESP_LOGW("ota3_package", "manifest decode failed: %s offset=%lu/%lu blocks=%lu err=%s",
+			PB_GET_ERROR(&input), (unsigned long)source.offset,
+			(unsigned long)source.end,
+			(unsigned long)blocks->block_count,
+			esp_err_to_name(blocks->error != ESP_OK ? blocks->error : source.error));
 		return source.error != ESP_OK ? source.error :
 			blocks->error != ESP_OK ? blocks->error :
 			ESP_ERR_INVALID_RESPONSE;
