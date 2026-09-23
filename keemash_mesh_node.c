@@ -157,7 +157,8 @@ static uint32_t node_capabilities(void)
 
 void mesh_v2_node_enable_capabilities(uint32_t capabilities)
 {
-	const uint32_t allowed = MESH_V2_CAP_TYPED_SENSOR;
+	const uint32_t allowed = MESH_V2_CAP_TYPED_SENSOR |
+		MESH_V2_CAP_OTA_V3;
 	portENTER_CRITICAL(&s_lock);
 	s_app_capabilities |= capabilities & allowed;
 	portEXIT_CRITICAL(&s_lock);
@@ -278,10 +279,12 @@ static void rel_deliver_cb(void *user, const uint8_t peer[6], uint8_t channel,
 		/* OTA v2 starts with a fixed operation byte in the 1..5 range.
 		 * The protobuf OtaMeshMessage starts with a length-delimited tag. */
 		if (payload_len > 0U && ota_bytes[0] > MESH_V2_OTA_OP_STATUS) {
+			if (keemash_mesh_ota_receiver_active()) return;
 			(void)keemash_mesh_ota_v3_receiver_handle(payload,
 				payload_len);
 			return;
 		}
+		if (keemash_mesh_ota_v3_receiver_active()) return;
 #endif
 		if (payload_len >= sizeof(mesh_v2_ota_common_payload_t)) {
 			(void)keemash_mesh_ota_receiver_handle_v2(payload, payload_len);
@@ -1038,7 +1041,8 @@ static void recover_root_link_if_needed(void)
 	portEXIT_CRITICAL(&s_lock);
 
 	if (send) {
-		if (keemash_mesh_ota_receiver_active()) {
+		if (keemash_mesh_ota_receiver_active() ||
+		    keemash_mesh_ota_v3_receiver_active()) {
 			reset = false;
 		}
 		if (reset) {

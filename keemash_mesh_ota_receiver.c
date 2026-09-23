@@ -20,6 +20,7 @@
 #include "mbedtls/md.h"
 
 #include "keemash_mesh_node.h"
+#include "keemash_mesh_ota_v3_receiver.h"
 #include "keemash_mesh_hooks.h"
 
 static const char *TAG = "mesh_ota";
@@ -951,6 +952,7 @@ static esp_err_t process_v2_payload_locked(const void *payload, size_t payload_l
 }
 esp_err_t keemash_mesh_ota_receiver_handle_v2(const void *payload, size_t payload_len)
 {
+	if (keemash_mesh_ota_v3_receiver_active()) return ESP_ERR_INVALID_STATE;
 	if (!payload || payload_len < sizeof(mesh_v2_ota_common_payload_t)) {
 		return ESP_ERR_INVALID_SIZE;
 	}
@@ -997,6 +999,7 @@ esp_err_t keemash_mesh_ota_receiver_handle_v2(const void *payload, size_t payloa
 
 esp_err_t keemash_mesh_ota_receiver_handle_rx(const void *pkt_buf, size_t pkt_len)
 {
+	if (keemash_mesh_ota_v3_receiver_active()) return ESP_ERR_INVALID_STATE;
 	if (!pkt_buf || pkt_len < sizeof(mesh_pkt_hdr_t)) {
 		return ESP_ERR_INVALID_SIZE;
 	}
