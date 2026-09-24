@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "pb_decode.h"
 
@@ -34,6 +35,13 @@ typedef enum {
 
 static esp_err_t check_manifest_crc(keemash_ota_v3_read_fn read_fn,
 	void *read_context, uint32_t manifest_size, uint32_t expected);
+
+static void *alloc_package_scratch(size_t size)
+{
+	void *buffer = heap_caps_calloc(1U, size,
+		MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	return buffer ? buffer : calloc(1U, size);
+}
 
 static uint32_t le32(const uint8_t *bytes)
 {
@@ -140,7 +148,7 @@ static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest,
 	block_context_t *blocks, manifest_block_mode_t mode)
 {
-	uint8_t *manifest_bytes = malloc(manifest_size);
+	uint8_t *manifest_bytes = alloc_package_scratch(manifest_size);
 	if (!manifest_bytes) return ESP_ERR_NO_MEM;
 	esp_err_t err = read_fn(KOTA3_HEADER_SIZE, manifest_bytes,
 		manifest_size, read_context);
@@ -199,7 +207,7 @@ esp_err_t keemash_ota_v3_package_inspect(
 		&manifest_size);
 	if (err != ESP_OK) return err;
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
-		calloc(1U, sizeof(*manifest));
+		alloc_package_scratch(sizeof(*manifest));
 	if (!manifest) return ESP_ERR_NO_MEM;
 	block_context_t blocks = {.error = ESP_OK};
 	err = decode_manifest(read_fn, read_context, manifest_size, manifest,
@@ -250,7 +258,7 @@ esp_err_t keemash_ota_v3_package_for_each_block(
 		package->package_size - package->payload_offset)
 		return ESP_ERR_INVALID_ARG;
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
-		calloc(1U, sizeof(*manifest));
+		alloc_package_scratch(sizeof(*manifest));
 	if (!manifest) return ESP_ERR_NO_MEM;
 	block_context_t blocks = {
 		.payload_offset = package->payload_offset,
@@ -306,8 +314,9 @@ esp_err_t keemash_ota_v3_verify_package(
 	if (err != ESP_OK) return err;
 
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest =
-		calloc(1U, sizeof(*manifest));
-	keemash_ota_v3_stream_t *validator = calloc(1U, sizeof(*validator));
+		alloc_package_scratch(sizeof(*manifest));
+	keemash_ota_v3_stream_t *validator =
+		alloc_package_scratch(sizeof(*validator));
 	if (!manifest || !validator) {
 		free(manifest);
 		free(validator);
