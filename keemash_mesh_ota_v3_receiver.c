@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "esp_app_desc.h"
+#include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -20,6 +21,7 @@
 #define OTA_V3_WORKER_STACK 8192U
 #define OTA_V3_WORKER_PRIO 5U
 #define OTA_V3_REPORT_PERIOD_MS 30000U
+#define OTA_V3_IDLE_TIMEOUT_MS (10U * 60U * 1000U)
 
 typedef struct {
 	uint16_t length;
@@ -27,6 +29,7 @@ typedef struct {
 } ota_v3_work_item_t;
 
 #if CONFIG_KEEMASH_OTA_V3_ENABLE
+static const char *TAG = "ota_v3_rx";
 static keemash_mesh_ota_v3_config_t s_config;
 static keemash_ota_v3_flash_receiver_t *s_receiver;
 static QueueHandle_t s_queue;
@@ -211,9 +214,23 @@ static void ota_v3_worker(void *context)
 {
 	(void)context;
 	ota_v3_work_item_t item;
+	TickType_t last_transfer_tick = xTaskGetTickCount();
 	for (;;) {
 		if (xQueueReceive(s_queue, &item,
 			pdMS_TO_TICKS(OTA_V3_REPORT_PERIOD_MS)) != pdTRUE) {
+			if ((TickType_t)(xTaskGetTickCount() - last_transfer_tick) >=
+			    pdMS_TO_TICKS(OTA_V3_IDLE_TIMEOUT_MS) &&
+			    xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE) {
+				keemash_ota_v3_flash_status_t status = {0};
+				keemash_ota_v3_flash_receiver_status(s_receiver, &status);
+				if (status.active || status.verified) {
+					esp_err_t err =
+						keemash_ota_v3_flash_receiver_abort_current(s_receiver);
+					ESP_LOGW(TAG, "idle transfer aborted: %s",
+						esp_err_to_name(err));
+				}
+				xSemaphoreGive(s_lock);
+			}
 			(void)send_pending_boot_report();
 			continue;
 		}
@@ -224,6 +241,9 @@ static void ota_v3_worker(void *context)
 			message) == ESP_OK &&
 		    xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE) {
 			process_message(message);
+			if (message->which_body ==
+			    keemash_fabric_v2_OtaMeshMessage_transfer_tag)
+				last_transfer_tick = xTaskGetTickCount();
 			xSemaphoreGive(s_lock);
 		}
 		free(message);

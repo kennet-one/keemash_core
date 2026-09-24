@@ -62,6 +62,11 @@ esp_err_t keemash_ota_v3_flash_receiver_abort(
 	const uint8_t operation_id[16],
 	const uint8_t artifact_id[KEEMASH_OTA_V3_SHA256_LEN]);
 
+/* Clears an abandoned active transfer without changing the boot partition.
+ * The caller must serialize this with transfer handling. */
+esp_err_t keemash_ota_v3_flash_receiver_abort_current(
+	keemash_ota_v3_flash_receiver_t *receiver);
+
 /* Decode/validate one typed mesh transfer on a dedicated OTA worker. A
  * successful COMMIT returns a verified inactive partition; the caller owns
  * safety recheck, boot selection, status delivery and reboot. */

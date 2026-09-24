@@ -352,6 +352,14 @@ esp_err_t keemash_ota_v3_flash_receiver_abort(
 		free(checkpoint);
 		if (load_err != ESP_OK) return load_err;
 	}
+	return keemash_ota_v3_flash_receiver_abort_current(receiver);
+}
+
+esp_err_t keemash_ota_v3_flash_receiver_abort_current(
+	keemash_ota_v3_flash_receiver_t *receiver)
+{
+	if (!receiver || (!receiver->active && !receiver->verified))
+		return ESP_ERR_INVALID_STATE;
 	esp_err_t err = keemash_ota_v3_checkpoint_clear();
 	if (err != ESP_OK) return err;
 	reset_receiver(receiver);
