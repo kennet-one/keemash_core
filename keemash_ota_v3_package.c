@@ -9,18 +9,10 @@
 #include "pb_decode.h"
 
 #define KOTA3_HEADER_SIZE 16U
-#define KOTA3_MANIFEST_MAX (1024U * 1024U)
+#define KOTA3_MANIFEST_MAX (64U * 1024U)
 #define KOTA3_READ_BYTES 2048U
 
 static const uint8_t s_magic[8] = {'K', 'O', 'T', 'A', '3', 0, 0, 1};
-
-typedef struct {
-	keemash_ota_v3_read_fn read;
-	void *context;
-	uint32_t offset;
-	uint32_t end;
-	esp_err_t error;
-} package_source_t;
 
 typedef struct {
 	keemash_ota_v3_read_fn read;
@@ -47,21 +39,6 @@ static uint32_t le32(const uint8_t *bytes)
 {
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 		((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
-}
-
-static bool read_manifest(pb_istream_t *stream, pb_byte_t *bytes,
-	size_t length)
-{
-	package_source_t *source = stream->state;
-	if (length > source->end - source->offset) {
-		source->error = ESP_ERR_INVALID_SIZE;
-		return false;
-	}
-	source->error = source->read(source->offset, bytes, length,
-		source->context);
-	if (source->error != ESP_OK) return false;
-	source->offset += length;
-	return true;
 }
 
 static bool count_block(pb_istream_t *stream, const pb_field_t *field,
@@ -163,36 +140,34 @@ static esp_err_t decode_manifest(keemash_ota_v3_read_fn read_fn,
 	keemash_fabric_v2_FirmwareArtifactManifest *manifest,
 	block_context_t *blocks, manifest_block_mode_t mode)
 {
-	package_source_t source = {
-		.read = read_fn,
-		.context = read_context,
-		.offset = KOTA3_HEADER_SIZE,
-		.end = KOTA3_HEADER_SIZE + manifest_size,
-		.error = ESP_OK,
-	};
+	uint8_t *manifest_bytes = malloc(manifest_size);
+	if (!manifest_bytes) return ESP_ERR_NO_MEM;
+	esp_err_t err = read_fn(KOTA3_HEADER_SIZE, manifest_bytes,
+		manifest_size, read_context);
+	if (err != ESP_OK) {
+		free(manifest_bytes);
+		return err;
+	}
 	*manifest = (keemash_fabric_v2_FirmwareArtifactManifest)
 		keemash_fabric_v2_FirmwareArtifactManifest_init_zero;
 	manifest->blocks.funcs.decode = mode == MANIFEST_VALIDATE_BLOCKS ?
 		validate_block : mode == MANIFEST_VISIT_BLOCKS ?
 		visit_block : count_block;
 	manifest->blocks.arg = blocks;
-	pb_istream_t input = {
-		.callback = read_manifest,
-		.state = &source,
-		.bytes_left = manifest_size,
-	};
-	if (!pb_decode(&input, keemash_fabric_v2_FirmwareArtifactManifest_fields,
-		manifest) || source.offset != source.end) {
-		ESP_LOGW("ota3_package", "manifest decode failed: %s offset=%lu/%lu blocks=%lu err=%s",
-			PB_GET_ERROR(&input), (unsigned long)source.offset,
-			(unsigned long)source.end,
+	pb_istream_t input = pb_istream_from_buffer(manifest_bytes,
+		manifest_size);
+	bool decoded = pb_decode(&input,
+		keemash_fabric_v2_FirmwareArtifactManifest_fields, manifest);
+	if (!decoded || input.bytes_left != 0U) {
+		ESP_LOGW("ota3_package", "manifest decode failed: %s remaining=%lu blocks=%lu err=%s",
+			PB_GET_ERROR(&input), (unsigned long)input.bytes_left,
 			(unsigned long)blocks->block_count,
-			esp_err_to_name(blocks->error != ESP_OK ? blocks->error : source.error));
-		return source.error != ESP_OK ? source.error :
-			blocks->error != ESP_OK ? blocks->error :
+			esp_err_to_name(blocks->error));
+		err = blocks->error != ESP_OK ? blocks->error :
 			ESP_ERR_INVALID_RESPONSE;
 	}
-	return ESP_OK;
+	free(manifest_bytes);
+	return err;
 }
 
 static esp_err_t read_header(keemash_ota_v3_read_fn read_fn,
