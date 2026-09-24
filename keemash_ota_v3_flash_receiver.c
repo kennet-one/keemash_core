@@ -514,7 +514,8 @@ void keemash_ota_v3_flash_receiver_status(
 	status->resumed = receiver->resumed;
 	if (!receiver->stream) return;
 	status->raw_offset = receiver->stream->raw_offset;
-	status->encoded_offset = receiver->stream->encoded_offset;
+	status->encoded_offset = receiver->stream->encoded_offset +
+		receiver->stream->block_encoded_offset;
 	status->next_block_index = receiver->stream->next_block_index;
 }
 
