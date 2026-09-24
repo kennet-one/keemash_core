@@ -204,6 +204,7 @@ static esp_err_t finish_block(keemash_ota_v3_stream_t *stream)
 	}
 	stream->raw_offset += stream->block.raw_size;
 	stream->encoded_offset += stream->block.encoded_size;
+	stream->block_encoded_offset = 0U;
 	stream->next_block_index++;
 	stream->block_active = false;
 	keemash_ota_v3_inflater_end(&stream->inflater);
