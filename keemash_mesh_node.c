@@ -76,9 +76,11 @@ typedef struct {
 } tunnel_rx_channel_t;
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static replay_slot_t s_ring[MESH_V2_REPLAY_RING_SIZE];
 static tunnel_tx_channel_t s_tunnel_tx[MESH_V2_TUNNEL_CHANNEL_MAX + 1];
 static tunnel_rx_channel_t s_tunnel_rx[MESH_V2_TUNNEL_CHANNEL_MAX + 1];
+#endif
 static char s_tag[MESH_V2_TAG_MAX] = "node";
 static uint32_t s_session_id = 0;
 static uint32_t s_next_seq = 1;
@@ -691,6 +693,7 @@ static esp_err_t send_raw_to_root(const uint8_t *bytes, size_t len)
 	return keemash_mesh_transport_send(root, bytes, len);
 }
 
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static void ring_store_locked(uint32_t seq, const uint8_t *bytes, size_t len)
 {
 	replay_slot_t *slot = &s_ring[seq % MESH_V2_REPLAY_RING_SIZE];
@@ -721,7 +724,6 @@ static bool ring_copy_locked(uint32_t seq, uint8_t *out, size_t *out_len)
 	return true;
 }
 
-#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static void tunnel_ring_store_locked(uint8_t channel, uint32_t seq, const uint8_t *bytes, size_t len)
 {
 	if (channel == 0 || channel > MESH_V2_TUNNEL_CHANNEL_MAX) {
@@ -734,8 +736,6 @@ static void tunnel_ring_store_locked(uint8_t channel, uint32_t seq, const uint8_
 	slot->len = len;
 	memcpy(slot->bytes, bytes, len);
 }
-#endif
-
 static void tunnel_ring_ack_locked(uint8_t channel, uint32_t ack_seq)
 {
 	if (channel == 0 || channel > MESH_V2_TUNNEL_CHANNEL_MAX) {
@@ -766,6 +766,8 @@ static bool tunnel_ring_copy_locked(uint8_t channel, uint32_t seq, uint8_t *out,
 	return true;
 }
 
+#endif
+
 static void new_session_locked(void)
 {
 	s_session_id = esp_random();
@@ -773,6 +775,7 @@ static void new_session_locked(void)
 		s_session_id = 1;
 	}
 	s_next_seq = 1;
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	memset(s_ring, 0, sizeof(s_ring));
 	memset(s_tunnel_tx, 0, sizeof(s_tunnel_tx));
 	memset(s_tunnel_rx, 0, sizeof(s_tunnel_rx));
@@ -780,6 +783,7 @@ static void new_session_locked(void)
 		s_tunnel_tx[ch].next_seq = 1;
 		s_tunnel_rx[ch].expected_seq = 1;
 	}
+#endif
 	s_tunnel_gap_count = 0;
 	s_tunnel_lost_count = 0;
 	s_tunnel_replay_count = 0;
@@ -789,6 +793,9 @@ static void new_session_locked(void)
 
 static esp_err_t send_packet(uint8_t type, const void *payload, size_t payload_len, bool reliable)
 {
+#if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
+	if (reliable) return ESP_ERR_NOT_SUPPORTED;
+#endif
 	if (payload_len > MESH_V2_PAYLOAD_MAX ||
 	    sizeof(mesh_v2_hdr_t) + payload_len > MESH_V2_PACKET_MAX) {
 		return ESP_ERR_INVALID_SIZE;
@@ -822,15 +829,18 @@ static esp_err_t send_packet(uint8_t type, const void *payload, size_t payload_l
 
 	size_t pkt_len = sizeof(mesh_v2_hdr_t) + payload_len;
 
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	if (reliable) {
 		portENTER_CRITICAL(&s_lock);
 		ring_store_locked(h->seq, buf, pkt_len);
 		portEXIT_CRITICAL(&s_lock);
 	}
+#endif
 
 	return send_raw_to_root(buf, pkt_len);
 }
 
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static esp_err_t send_lost(uint32_t missing_seq)
 {
 	mesh_v2_lost_payload_t p = {
@@ -884,7 +894,6 @@ static esp_err_t send_tunnel_nack(const mesh_v2_hdr_t *h, const mesh_v2_tunnel_h
 	return send_tunnel_control_packet(MESH_V2_TYPE_TUNNEL_NACK, &p, sizeof(p));
 }
 
-#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static esp_err_t send_tunnel_packet(uint8_t channel, const void *inner_payload,
                                     size_t inner_len, bool reliable)
 {
@@ -1585,6 +1594,7 @@ esp_err_t mesh_v2_node_send_event(uint32_t command_id, const char *text)
 	return err;
 }
 
+#if CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 static void handle_ack(uint32_t session_id, uint32_t ack_seq)
 {
 	bool became_ready = false;
@@ -1793,6 +1803,8 @@ static void handle_tunnel_data(const mesh_v2_hdr_t *h, const uint8_t *payload)
 	}
 }
 
+#endif
+
 esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, size_t pkt_len)
 {
 	if (!from || !pkt_buf) return ESP_ERR_INVALID_ARG;
@@ -1895,7 +1907,7 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 
 #if !CONFIG_KEEMASH_V2_COMPAT_TUNNEL_ENABLE
 	return ESP_ERR_NOT_SUPPORTED;
-#endif
+#else
 
 	if (h->type == MESH_V2_TYPE_ACK) {
 		handle_ack(h->session_id, h->ack_seq);
@@ -1923,6 +1935,7 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 	}
 
 	return ESP_OK;
+#endif
 }
 
 bool mesh_v2_node_reliable_ready(void)

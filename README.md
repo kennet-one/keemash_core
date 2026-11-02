@@ -6,6 +6,8 @@ ESP-MESH.
 Repository: `kennet-one/keemash_core`.
 
 Latest stable release: `v0.9.4`.
+Node memory hardening canary: `v0.9.5-rc.1`, based on v0.9.4 with unchanged
+API compatibility. See [node memory hardening](docs/node-memory-hardening.md).
 API compatibility level: `0.9.4` (`KEEMASH_MESH_CORE_VERSION == 0x00090400UL`).
 
 License: `GPL-2.0-only`.
