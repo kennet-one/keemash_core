@@ -13,6 +13,9 @@
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#if CONFIG_KEEMASH_REL_WAITLIST_WATCHPOINT
+#include "esp_cpu.h"
+#endif
 
 #include "keemash_mesh_core.h"
 #include "keemash_mesh_hooks.h"
@@ -472,6 +475,21 @@ esp_err_t mesh_v2_root_init(void)
 	if (!s_rel_lock) {
 		s_rel_lock = xSemaphoreCreateRecursiveMutex();
 		if (!s_rel_lock) return ESP_ERR_NO_MEM;
+#if CONFIG_KEEMASH_REL_WAITLIST_WATCHPOINT
+		/* 2026-11-27 wedge hunt — ROOT lock (this is the one node0's
+		 * wedges lived on: stats take/give + OTA relay). Queue_t layout
+		 * (IDF 6 queue.h:116-128): xTasksWaitingToReceive at +32; legal
+		 * stores there only when a task blocks/unblocks on this mutex,
+		 * which rc.17's zero-timeout stats take made rare — any other
+		 * store is the corruption writer and the exception names its PC. */
+		{
+			uintptr_t wl = ((uintptr_t)s_rel_lock + 32) & ~(uintptr_t)31;
+			esp_err_t wp_err = esp_cpu_set_watchpoint(0, (const void *)wl, 32,
+			                                         ESP_CPU_WATCHPOINT_STORE);
+			ESP_LOGI(TAG, "wedge hunt: ROOT wait-list watchpoint @%p rc=%d",
+			         (void *)wl, (int)wp_err);
+		}
+#endif
 	}
 	uint8_t mac[6] = {0};
 	local_mac(mac);
