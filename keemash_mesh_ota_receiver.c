@@ -26,7 +26,14 @@
 static const char *TAG = "mesh_ota";
 
 #define MESH_OTA_RX_TIMEOUT_MS		60000U
-#define MESH_OTA_V2_RX_TIMEOUT_MS	300000U
+/* 300 s let a dead v2 session freeze every child recovery action for five
+ * minutes (the "наглухо" wedge, 2026-11-27). With 1024-byte chunks a live
+ * transfer moves bytes at least every few seconds; 120 s of silence means
+ * the sender is gone. */
+#define MESH_OTA_V2_RX_TIMEOUT_MS	120000U
+/* Staleness horizon for the lock-free liveness snapshot used by
+ * keemash_mesh_ota_receiver_active() when the OTA lock is busy/stuck. */
+#define MESH_OTA_STALE_MS		120000U
 #define MESH_OTA_V2_QUEUE_LEN		2U
 #define MESH_OTA_V2_WORKER_STACK	6144U
 #define MESH_OTA_V2_WORKER_PRIO		5U
@@ -52,6 +59,17 @@ typedef struct {
 } mesh_ota_v2_work_item_t;
 
 static mesh_ota_rx_state_t s_ota = {0};
+/*
+ * Lock-free liveness snapshot (wedge fix, 2026-11-27 #30): the old
+ * keemash_mesh_ota_receiver_active() returned TRUE whenever its 20 ms lock
+ * take failed — a busy or stuck OTA worker therefore made every caller
+ * believe an OTA session was running, which gated ALL child recovery
+ * actions (soft reconnect, mesh restart, system.reboot) off for the full
+ * RX timeout. Publishing session state + last-progress tick as plain
+ * volatiles lets active() answer stale-aware without the lock.
+ */
+static volatile bool s_ota_live_active = false;
+static volatile TickType_t s_ota_live_progress_tick = 0;
 static char s_last_abort_reason[32] = "boot";
 static uint32_t s_status_counter = 0;
 static bool s_reboot_pending = false;
@@ -105,6 +123,14 @@ static bool ota_rx_stale(void)
 static void ota_rx_touch(void)
 {
 	s_ota.last_rx_tick = xTaskGetTickCount();
+	s_ota_live_progress_tick = s_ota.last_rx_tick;
+	s_ota_live_active = s_ota.active;
+}
+
+static void ota_publish_live_locked(void)
+{
+	s_ota_live_active = s_ota.active;
+	s_ota_live_progress_tick = s_ota.last_rx_tick;
 }
 
 static void ota_note_abort_reason(const char *reason)
@@ -276,6 +302,7 @@ static void finish_abort(void)
 	}
 	ota_hash_free();
 	memset(&s_ota, 0, sizeof(s_ota));
+	ota_publish_live_locked();
 }
 
 static void finish_stale_abort(void)
@@ -397,10 +424,28 @@ bool keemash_mesh_ota_receiver_active(void)
 		return false;
 	}
 	if (xSemaphoreTake(s_ota_lock, pdMS_TO_TICKS(20)) != pdTRUE) {
-		return true;
+		/*
+		 * Lock busy (wedge fix 2026-11-27 #30): the old code returned
+		 * TRUE here unconditionally, so a busy/stuck OTA worker froze
+		 * every child recovery action. Answer from the lock-free
+		 * snapshot: a session that has made no progress for
+		 * MESH_OTA_STALE_MS is dead even if the lock never frees —
+		 * the recovery loop may act, the watchdog task cleans the
+		 * session when it can take the lock, and the node-level wedge
+		 * watchdog reboots if even that is impossible.
+		 */
+		TickType_t progress = s_ota_live_progress_tick;
+		if (!s_ota_live_active || progress == 0) {
+			return false;
+		}
+		return (xTaskGetTickCount() - progress) <=
+		       pdMS_TO_TICKS(MESH_OTA_STALE_MS);
 	}
 	active = s_ota.active;
 	xSemaphoreGive(s_ota_lock);
+	if (active) {
+		ota_publish_live_locked();
+	}
 	return active;
 }
 
@@ -480,8 +525,7 @@ static esp_err_t handle_begin(const mesh_ota_begin_packet_t *p, size_t pkt_len)
 	s_ota.active = true;
 	s_ota.handle = handle;
 	s_ota.partition = partition;
-	s_ota.image_size = p->image_size;
-	s_ota.last_seq = p->seq;
+	s_ota.image_size = p->image_size;	s_ota.last_seq = p->seq;
 	ota_rx_touch();
 	s_reboot_pending = false;
 

@@ -188,4 +188,35 @@ menu "KeeMASH Reliable Mesh"
             the running application. Keep disabled for production rollout
             until the kPowerLed canary passes.
 
+    config KEEMASH_WEDGE_WATCHDOG
+        bool "Wedge watchdog: reboot child after prolonged mesh silence"
+        default y
+        help
+            Reboots the node when no validated V2 frame from the root has
+            been received for KEEMASH_WEDGE_REBOOT_MS. Cures wedges the
+            recovery loop cannot (stuck OTA receiver gate, deadlocked
+            worker, half-dead radio state). The reboot count persists in
+            NVS (namespace "keemash", key "wedge_cnt").
+
+    config KEEMASH_WEDGE_REBOOT_MS
+        int "Wedge watchdog silence threshold (ms)"
+        default 600000
+        range 120000 3600000
+        depends on KEEMASH_WEDGE_WATCHDOG
+        help
+            A healthy child hears from the root (time sync, ACKs, poll
+            replies) every few seconds; 10 minutes of total silence means
+            the node is wedged or the mesh is unreachable — either way a
+            clean reboot re-joins faster than a wedged retry loop.
+
+    config KEEMASH_WEDGE_TEST_AFTER_S
+        int "Wedge watchdog fault injection: freeze progress after N s of uptime (0 = off)"
+        default 0
+        range 0 86400
+        help
+            TEST BUILDS ONLY. After N seconds of uptime the progress clock
+            stops advancing (simulating a wedged node) and the watchdog
+            fires REBOOT_MS later. Keep 0 in production; a nonzero value
+            makes the node reboot on a fixed cycle forever.
+
 endmenu
