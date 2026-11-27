@@ -457,8 +457,14 @@ static void rel_poll_task(void *arg)
 {
 	(void)arg;
 	for (;;) {
+		/* Zero-timeout try-take (rc.20): this poll task was the LAST routine
+		 * blocking taker of the root reliable lock — the watchpoint hunt
+		 * caught it inserting into the wait list ~40 s after boot (legal,
+		 * 2026-11-27 19:14), and every wedged vListInsert of the day was
+		 * exactly this shape on a corrupted list. On a busy lock we skip
+		 * one poll cycle and retry — self-healing, protocol-safe (poll). */
 		if (s_rel && s_rel_lock &&
-		    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+		    xSemaphoreTakeRecursive(s_rel_lock, 0) == pdTRUE) {
 			keemash_rel_poll(s_rel);
 			flush_one_pending_time();
 			active_ping_poll_one();
