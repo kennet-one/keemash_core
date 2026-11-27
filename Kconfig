@@ -209,6 +209,18 @@ menu "KeeMASH Reliable Mesh"
             the node is wedged or the mesh is unreachable — either way a
             clean reboot re-joins faster than a wedged retry loop.
 
+    config KEEMASH_BROKER_SUBMIT_WAIT_MS
+        int "TX broker submit lock wait (ms)"
+        default 10
+        range 1 100
+        help
+            Bounded wait for the TX broker lock in submit. Keep short:
+            the mesh RX relay submits while holding the reliable lock, so
+            contended submits extend the root RX lock hold; 100 ms waits
+            caused interrupt-WDT crashes under post-boot renegotiation
+            storms (2026-11-27). Dropped submits are retried by the
+            reliable layer (max_retries/RTO) — protocol-safe.
+
     config KEEMASH_WEDGE_TEST_AFTER_S
         int "Wedge watchdog fault injection: freeze progress after N s of uptime (0 = off)"
         default 0
