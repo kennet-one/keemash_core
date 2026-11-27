@@ -122,8 +122,12 @@ static esp_err_t send_packet_to_mac(const uint8_t mac[6], uint8_t type,
 
 static bool current_rel_stats(const uint8_t peer[6], keemash_rel_stats_t *out)
 {
+	/* rc.15: fail fast — stats are best-effort for /nodes; a 100 ms wait
+	 * stacked up across 7 nodes while the RX chain held the lock
+	 * (post-boot renegotiation storms) and fed the interrupt-WDT
+	 * crashes of 2026-11-27. Shallow data beats a wedged root. */
 	if (!peer || !out || !s_rel || !s_rel_lock) return false;
-	if (xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) != pdTRUE)
+	if (xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(20)) != pdTRUE)
 		return false;
 	bool found = keemash_rel_stats(s_rel, peer, out);
 	xSemaphoreGiveRecursive(s_rel_lock);
@@ -1325,7 +1329,7 @@ bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 	portEXIT_CRITICAL(&s_lock);
 
 	if (s_rel && s_rel_lock &&
-	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(20)) == pdTRUE) {
 		keemash_rel_stats_t rel;
 		if (keemash_rel_stats(s_rel, mac, &rel)) {
 			out->seen = true;

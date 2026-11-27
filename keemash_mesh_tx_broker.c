@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "keemash_mesh_tx_broker.h"
 
+/* rc.15: bounded broker submit wait. Must be short: submitters from the
+ * mesh RX relay hold the reliable lock while submitting; a long block
+ * extends the root RX lock hold and past-storm WDT crashes follow. */
+#include "sdkconfig.h"
+#ifndef CONFIG_KEEMASH_BROKER_SUBMIT_WAIT_MS
+#define CONFIG_KEEMASH_BROKER_SUBMIT_WAIT_MS 100
+#endif
+#define KEEMASH_BROKER_SUBMIT_WAIT_TICKS pdMS_TO_TICKS(CONFIG_KEEMASH_BROKER_SUBMIT_WAIT_MS)
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -142,13 +151,22 @@ esp_err_t keemash_mesh_tx_broker_submit(keemash_mesh_tx_broker_t *broker,
 {
 	if (!broker || !packet || packet_len == 0) return ESP_ERR_INVALID_ARG;
 	if (packet_len > broker->cfg.max_packet_size) {
-		if (xSemaphoreTake(broker->lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+		if (xSemaphoreTake(broker->lock, KEEMASH_BROKER_SUBMIT_WAIT_TICKS) == pdTRUE) {
 			broker->stats.rejected_size++;
 			xSemaphoreGive(broker->lock);
 		}
 		return ESP_ERR_INVALID_SIZE;
 	}
-	if (xSemaphoreTake(broker->lock, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+	/*
+	 * Bounded, short wait (rc.15, 2026-11-27 WDT family #28/#29/#31): the
+	 * old fixed 100 ms block chained badly — the mesh RX relay submits
+	 * while holding the reliable lock, so every contended submit extended
+	 * the root RX lock hold; under post-boot renegotiation storms two
+	 * cores ended up spinning in FreeRTOS queue-lock internals past the
+	 * 800 ms INT_WDT (crashes 07:02:39 + 07:04). Dropping a submit is
+	 * protocol-safe: the reliable layer retries (max_retries, RTO).
+	 */
+	if (xSemaphoreTake(broker->lock, KEEMASH_BROKER_SUBMIT_WAIT_TICKS) != pdTRUE) return ESP_ERR_TIMEOUT;
 	broker_slot_t *slot = NULL;
 	uint16_t free_slots = 0;
 	for (uint16_t i = 0; i < broker->cfg.slots; i++) {
