@@ -1328,8 +1328,18 @@ bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 	}
 	portEXIT_CRITICAL(&s_lock);
 
+	/* Never BLOCK on the reliable lock here (rc.17, 2026-11-27): every
+	 * interrupt-WDT crash of the day (09:01/09:44/15:27/18:06) had one task
+	 * wedged in vListInsert while inserting into this mutex's wait list —
+	 * a corrupted FreeRTOS list (heap-metadata damage from a separate
+	 * writer) turns that walk into an endless IRQ-off spin. A zero-timeout
+	 * try-take can never enter vTaskPlaceOnEventList, so root stats can no
+	 * longer manifest the corruption as a WDT crash: on a busy lock we
+	 * simply serve the shallow snapshot this call already built above and
+	 * the caller retries on its next poll. Root-only function (no child
+	 * firmware exercises it). */
 	if (s_rel && s_rel_lock &&
-	    xSemaphoreTakeRecursive(s_rel_lock, pdMS_TO_TICKS(20)) == pdTRUE) {
+	    xSemaphoreTakeRecursive(s_rel_lock, 0) == pdTRUE) {
 		keemash_rel_stats_t rel;
 		if (keemash_rel_stats(s_rel, mac, &rel)) {
 			out->seen = true;
