@@ -90,6 +90,17 @@ static void broker_task(void *arg)
 				slot->bytes = bytes;
 				xSemaphoreGive(broker->lock);
 			}
+			/*
+			 * rc.16 (2026-11-27 crash #3, ELF a0b818fd4): the WDT
+			 * victim was THIS task spinning inside esp_mesh_send's
+			 * WiFi adapter mutex while the radio was continuously
+			 * busy (post-boot renegotiation storms) — a back-to-back
+			 * drain keeps the adapter lock hot and starves CPU
+			 * interrupts past INT_WDT. One tick of pacing per send
+			 * lets the radio finish between sends; ACKs lose <=10 ms
+			 * (mesh RTT is 10-30 ms), OTA pushes gain ~10 s per MB.
+			 */
+			vTaskDelay(1);
 		}
 	}
 }
