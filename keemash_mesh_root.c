@@ -1277,6 +1277,11 @@ esp_err_t mesh_v2_root_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 	return ESP_OK;
 }
 
+/* Tripwire counter for the zero-timeout reliable-lock take in root stats
+ * (2026-11-27 wedge hunt): a sustained failure burst means the lock is held
+ * long (OTA relay) or the mutex is already sick — surface it early. */
+static uint32_t s_rel_stats_take_fails;
+
 bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 {
 	if (!mac || !out) {
@@ -1363,6 +1368,13 @@ bool mesh_v2_root_stats_for_mac(const uint8_t mac[6], mesh_v2_root_stats_t *out)
 			out->has_gap = out->has_gap || rel.reorder_depth > 0;
 		}
 		xSemaphoreGiveRecursive(s_rel_lock);
+		s_rel_stats_take_fails = 0;
+	} else {
+		uint32_t fails = ++s_rel_stats_take_fails;
+		if (fails == 32 || (fails % 1024) == 0) {
+			ESP_LOGW(TAG, "rel stats: reliable lock busy x%u",
+			         (unsigned)fails);
+		}
 	}
 
 	return out->seen;

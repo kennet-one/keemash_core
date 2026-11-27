@@ -231,4 +231,18 @@ menu "KeeMASH Reliable Mesh"
             fires REBOOT_MS later. Keep 0 in production; a nonzero value
             makes the node reboot on a fixed cycle forever.
 
+    config KEEMASH_REL_WAITLIST_WATCHPOINT
+        bool "Hardware store-watchpoint on the reliable lock's wait list (wedge hunt)"
+        default n
+        depends on IDF_TARGET_ESP32S3
+        help
+            DEBUG HUNT BUILDS ONLY (2026-11-27 heap-corruption hunt). Arms an
+            ESP32-S3 hardware store-watchpoint on the FreeRTOS wait-list head
+            of the reliable recursive mutex (Queue_t +32, aligned down to 32).
+            With rc.17's zero-timeout stats take, root-side tasks almost never
+            block on this mutex, so any watchpoint hit is a corruption writer:
+            the resulting exception dump names its PC. Legal hits are rare
+            (only genuine block/unblock of remaining blocking takers). Keep n
+            in production.
+
 endmenu

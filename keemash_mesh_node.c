@@ -25,6 +25,9 @@
 #include "keemash_mesh_ota_v3_receiver.h"
 #include "nvs.h"
 #include "sdkconfig.h"
+#if CONFIG_KEEMASH_REL_WAITLIST_WATCHPOINT
+#include "esp_cpu.h"
+#endif
 
 static const char *TAG = "mesh_v2";
 
@@ -491,6 +494,20 @@ static esp_err_t reliable_init(void)
 	if (!s_rel_lock) {
 		s_rel_lock = xSemaphoreCreateRecursiveMutex();
 		if (!s_rel_lock) return ESP_ERR_NO_MEM;
+#if CONFIG_KEEMASH_REL_WAITLIST_WATCHPOINT
+		/* 2026-11-27 wedge hunt: Queue_t layout (IDF 6 queue.h:116-128) has
+		 * xTasksWaitingToReceive at +32; legal stores there happen only when
+		 * a task blocks/unblocks on this mutex. With rc.17's zero-timeout
+		 * stats take those are rare on the root — any other store is the
+		 * heap-corruption writer and the exception dump names its PC. */
+		{
+			uintptr_t wl = ((uintptr_t)s_rel_lock + 32) & ~(uintptr_t)31;
+			esp_err_t wp_err = esp_cpu_set_watchpoint(0, (const void *)wl, 32,
+			                                         ESP_CPU_WATCHPOINT_STORE);
+			ESP_LOGI(TAG, "wedge hunt: wait-list watchpoint @%p rc=%d",
+			         (void *)wl, (int)wp_err);
+		}
+#endif
 	}
 	uint8_t mac[6] = {0};
 	local_mac(mac);
