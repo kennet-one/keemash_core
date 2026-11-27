@@ -102,6 +102,74 @@ static uint8_t s_recovery_phase = 0;
 static uint32_t s_tunnel_gap_count = 0;
 static uint32_t s_tunnel_lost_count = 0;
 static uint32_t s_tunnel_replay_count = 0;
+/*
+ * Wedge watchdog (2026-11-27, "наглухо" fix): a child that receives NO V2
+ * traffic at all for CONFIG_KEEMASH_WEDGE_REBOOT_MS is wedged beyond what
+ * the recovery loop can fix (stuck OTA gate, deadlocked worker, radio
+ * half-state). Rebooting is the only cure and is cheap: boot-join is
+ * faster than any wedged retry loop. Progress = any validated V2 frame
+ * from the root (time sync, ACK, control result, OTA chunk) or a mesh
+ * join event. NVS counter survives the reboot for diagnostics.
+ */
+static volatile TickType_t s_wedge_progress_tick = 0;
+static esp_timer_handle_t s_wedge_timer = NULL;
+#if CONFIG_KEEMASH_WEDGE_WATCHDOG
+static uint32_t s_wedge_reboot_count(void)
+{
+	nvs_handle_t nvs = 0;
+	uint32_t count = 0;
+	if (nvs_open("keemash", NVS_READWRITE, &nvs) == ESP_OK) {
+		(void)nvs_get_u32(nvs, "wedge_cnt", &count);
+		(void)nvs_set_u32(nvs, "wedge_cnt", count + 1);
+		(void)nvs_commit(nvs);
+		nvs_close(nvs);
+	}
+	return count + 1;
+}
+#endif
+
+#if CONFIG_KEEMASH_WEDGE_WATCHDOG
+static void wedge_watchdog_cb(void *arg)
+{
+	(void)arg;
+	TickType_t progress = s_wedge_progress_tick;
+	uint32_t silence_ms = (uint32_t)((xTaskGetTickCount() - progress) *
+	                                 portTICK_PERIOD_MS);
+	if (silence_ms < (uint32_t)CONFIG_KEEMASH_WEDGE_REBOOT_MS) {
+		return;
+	}
+	uint32_t count = s_wedge_reboot_count();
+	ESP_LOGE(TAG,
+	         "wedge watchdog: %lu ms without any root traffic "
+	         "(threshold %d ms); rebooting (wedge #%lu)",
+	         (unsigned long)silence_ms,
+	         (int)CONFIG_KEEMASH_WEDGE_REBOOT_MS,
+	         (unsigned long)count);
+	esp_restart();
+}
+#endif
+
+static void wedge_progress_touch(void)
+{
+#if CONFIG_KEEMASH_WEDGE_TEST_AFTER_S > 0
+	/* Fault injection (test builds only): freeze the progress clock
+	 * once the node has been up N seconds to prove the watchdog fires. */
+	if (esp_timer_get_time() >=
+	    (int64_t)CONFIG_KEEMASH_WEDGE_TEST_AFTER_S * 1000000) {
+		return;
+	}
+#endif
+	s_wedge_progress_tick = xTaskGetTickCount();
+}
+
+uint32_t keemash_mesh_wedge_silence_ms(void)
+{
+	TickType_t progress = s_wedge_progress_tick;
+	return progress == 0 ? 0 :
+	       (uint32_t)((xTaskGetTickCount() - progress) *
+	                  portTICK_PERIOD_MS);
+}
+
 static mesh_v2_node_diag_t s_diag = {0};
 static keemash_rel_ctx_t *s_rel = NULL;
 static SemaphoreHandle_t s_rel_lock = NULL;
@@ -1061,6 +1129,24 @@ void mesh_v2_node_init(const char *tag)
 	}
 	copy_tag(s_tag, sizeof(s_tag), tag);
 	portEXIT_CRITICAL(&s_lock);
+	wedge_progress_touch();
+#if CONFIG_KEEMASH_WEDGE_WATCHDOG
+	if (!s_wedge_timer) {
+		const esp_timer_create_args_t args = {
+			.callback = wedge_watchdog_cb,
+			.name = "wedge_wdg",
+			.skip_unhandled_events = true,
+		};
+		if (esp_timer_create(&args, &s_wedge_timer) == ESP_OK) {
+			/* 30 s period; the callback only compares ticks. */
+			(void)esp_timer_start_periodic(s_wedge_timer,
+			                               30U * 1000U * 1000U);
+		} else {
+			s_wedge_timer = NULL;
+			ESP_LOGW(TAG, "wedge watchdog disabled: no timer");
+		}
+	}
+#endif
 	if (!s_task_cpu_lock) {
 		s_task_cpu_lock = xSemaphoreCreateMutex();
 		if (!s_task_cpu_lock) {
@@ -1075,6 +1161,8 @@ void mesh_v2_node_init(const char *tag)
 
 void mesh_v2_node_on_mesh_connected(void)
 {
+	/* A mesh join/parent event is progress for the wedge watchdog. */
+	wedge_progress_touch();
 	portENTER_CRITICAL(&s_lock);
 	s_mesh_route_up = true;
 	portEXIT_CRITICAL(&s_lock);
@@ -1861,6 +1949,9 @@ esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, siz
 		    (!mac_is_zero(expected_root) && !mac_eq(expected_root, from))) {
 			return ESP_ERR_INVALID_ARG;
 		}
+		/* Wedge watchdog heartbeat: any valid V2 frame from the
+		 * root proves the node is not wedged. */
+		wedge_progress_touch();
 		if (probe->magic == MESH_PKT_MAGIC &&
 		    probe->version == MESH_PKT_VERSION_V2 &&
 		    probe->type >= MESH_V2_TYPE_RELIABLE_HELLO &&

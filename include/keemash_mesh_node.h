@@ -16,6 +16,9 @@ extern "C" {
 void mesh_v2_node_init(const char *tag);
 void mesh_v2_node_on_mesh_connected(void);
 void mesh_v2_node_on_mesh_disconnected(void);
+// Wedge watchdog introspection: ms since the last validated V2 frame
+// from the root (0 when none yet). See CONFIG_KEEMASH_WEDGE_WATCHDOG.
+uint32_t keemash_mesh_wedge_silence_ms(void);
 esp_err_t mesh_v2_node_handle_rx(const uint8_t from[6], const void *pkt_buf, size_t pkt_len);
 // Set the protocol-origin STA MAC, not the ESP-MESH root SoftAP address.
 // Pass NULL after a route/root change so HELLO_ACK can bind the new origin.

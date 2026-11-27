@@ -35,6 +35,11 @@ static keemash_ota_v3_flash_receiver_t *s_receiver;
 static QueueHandle_t s_queue;
 static SemaphoreHandle_t s_lock;
 static TaskHandle_t s_worker;
+/* Lock-free liveness snapshot for the stale-aware active() gate
+ * (wedge fix 2026-11-27 #30). */
+static volatile bool s_v3_live_active = false;
+static volatile TickType_t s_v3_live_tick = 0;
+#define OTA_V3_STALE_MS 120000U
 
 static const keemash_fabric_v2_Id128 *message_operation(
 	const keemash_fabric_v2_OtaTransfer *transfer)
@@ -244,6 +249,15 @@ static void ota_v3_worker(void *context)
 			if (message->which_body ==
 			    keemash_fabric_v2_OtaMeshMessage_transfer_tag)
 				last_transfer_tick = xTaskGetTickCount();
+			/* Keep the lock-free snapshot fresh for the
+			 * stale-aware active() gate. */
+			{
+				keemash_ota_v3_flash_status_t live = {0};
+				keemash_ota_v3_flash_receiver_status(
+					s_receiver, &live);
+				s_v3_live_active = live.active || live.verified;
+				s_v3_live_tick = xTaskGetTickCount();
+			}
 			xSemaphoreGive(s_lock);
 		}
 		free(message);
@@ -315,10 +329,21 @@ bool keemash_mesh_ota_v3_receiver_active(void)
 {
 #if CONFIG_KEEMASH_OTA_V3_ENABLE
 	if (!s_receiver || !s_lock) return false;
-	if (xSemaphoreTake(s_lock, pdMS_TO_TICKS(20)) != pdTRUE) return true;
+	if (xSemaphoreTake(s_lock, pdMS_TO_TICKS(20)) != pdTRUE) {
+		/* Lock busy (wedge fix 2026-11-27 #30, same as the v2
+		 * receiver): never report an unconditionally-true gate —
+		 * a stuck worker must not freeze child recovery. Fall back
+		 * to the lock-free progress snapshot. */
+		TickType_t progress = s_v3_live_tick;
+		if (!s_v3_live_active || progress == 0) return false;
+		return (xTaskGetTickCount() - progress) <=
+		       pdMS_TO_TICKS(OTA_V3_STALE_MS);
+	}
 	keemash_ota_v3_flash_status_t status = {0};
 	keemash_ota_v3_flash_receiver_status(s_receiver, &status);
 	xSemaphoreGive(s_lock);
+	s_v3_live_active = status.active || status.verified;
+	s_v3_live_tick = xTaskGetTickCount();
 	return status.active || status.verified;
 #else
 	return false;
